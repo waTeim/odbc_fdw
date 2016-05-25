@@ -815,7 +815,7 @@ static void odbcGetForeignPaths(PlannerInfo *root, RelOptInfo *baserel, Oid fore
 	
 	add_path(baserel, 
 		(Path *) create_foreignscan_path(root, baserel, baserel->rows, startup_cost, total_cost,
-			NIL, NULL, NIL));
+			NIL, NULL, NIL, NIL /* no fdw_private list */));
 	
 	#ifdef DEBUG
 		ereport(NOTICE,

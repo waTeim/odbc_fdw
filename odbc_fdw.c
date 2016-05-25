@@ -859,7 +859,10 @@ static ForeignScan* odbcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel,
 			));
 	#endif
 	
-	return make_foreignscan(tlist, scan_clauses, scan_relid, NIL, NIL);
+	return make_foreignscan(tlist, scan_clauses,
+                                scan_relid, NIL, NIL,
+                                NIL /* fdw_scan_tlist */, NIL, /* fdw_recheck_quals */
+                                NIL /* outer_plan */ );
 }
 
 /* routines for versions older than 9.2.0 */

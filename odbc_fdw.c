@@ -406,7 +406,7 @@ odbcGetOptions(Oid foreigntableid, char **svr_dsn, char **svr_database, char **s
     }
 
 #ifdef DEBUG
-    elog(NOTICE, "list length: %i", (*mapping_list)->length);
+    //elog(NOTICE, "list length: %i", (*mapping_list)->length);
 #endif
 
     /* Default values, if required */

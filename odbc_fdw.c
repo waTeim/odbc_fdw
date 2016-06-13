@@ -601,7 +601,7 @@ odbcGetTableSize(char *svr_dsn, char *svr_database, char *svr_schema, char *svr_
     }
     else
     {
-        elog(NOTICE, "Opps!");
+        elog(NOTICE, "Oops!");
     }
 
     /* Free handles, and disconnect */

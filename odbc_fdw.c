@@ -1223,7 +1223,7 @@ odbcIterateForeignScan(ForeignScanState *node)
         SQLSMALLINT	NullablePtr;
         int i;
         int k;
-        bool found = FALSE;
+        bool found;
 
         /* Allocate memory for the masks */
         col_position_mask = NIL;
@@ -1232,6 +1232,7 @@ odbcIterateForeignScan(ForeignScanState *node)
         /* Obtain the column information of the first row. */
         for (i = 1; i <= columns; i++)
         {
+            found = FALSE;
             ColumnName = (SQLCHAR *) palloc(sizeof(SQLCHAR) * 255);
             SQLDescribeCol(stmt,
                            i,						/* ColumnName */

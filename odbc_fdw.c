@@ -1286,7 +1286,7 @@ odbcIterateForeignScan(ForeignScanState *node)
     {
         num_of_result_cols = festate->num_of_result_cols;
         col_position_mask = list_copy(festate->col_position_mask);
-        col_size_array = festate->col_size_array;
+        col_size_array = list_copy(festate->col_size_array);
     }
 
     ExecClearTuple(slot);

@@ -135,7 +135,7 @@ static void odbcGetForeignRelSize(PlannerInfo *root, RelOptInfo *baserel, Oid fo
 static void odbcEstimateCosts(PlannerInfo *root, RelOptInfo *baserel, Cost *startup_cost, Cost *total_cost, Oid foreigntableid);
 static void odbcGetForeignPaths(PlannerInfo *root, RelOptInfo *baserel, Oid foreigntableid);
 static bool odbcAnalyzeForeignTable(Relation relation, AcquireSampleRowsFunc *func, BlockNumber *totalpages);
-static ForeignScan* odbcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel, Oid foreigntableid, ForeignPath *best_path, List *tlist, List *scan_clauses);
+static ForeignScan* odbcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel, Oid foreigntableid, ForeignPath *best_path, List *tlist, List *scan_clauses, Plan *outer_plan);
 /* routines for versions older than 9.2.0 */
 #else
 static FdwPlan *odbcPlanForeignScan(Oid foreigntableid, PlannerInfo *root, RelOptInfo *baserel);
@@ -841,8 +841,8 @@ static bool odbcAnalyzeForeignTable(Relation relation, AcquireSampleRowsFunc *fu
 	return false;
 }
 
-static ForeignScan* odbcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel, 
-	Oid foreigntableid, ForeignPath *best_path, List *tlist, List *scan_clauses)
+static ForeignScan* odbcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel,
+	Oid foreigntableid, ForeignPath *best_path, List *tlist, List *scan_clauses, Plan *outer_plan)
 {
 	Index scan_relid = baserel->relid;
 	#ifdef DEBUG

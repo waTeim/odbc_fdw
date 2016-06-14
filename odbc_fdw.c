@@ -815,8 +815,8 @@ static void odbcGetForeignPaths(PlannerInfo *root, RelOptInfo *baserel, Oid fore
 	
 	add_path(baserel, 
 		(Path *) create_foreignscan_path(root, baserel, baserel->rows, startup_cost, total_cost,
-			NIL, NULL, NIL, NIL /* no fdw_private list */));
-	
+			NIL, NULL, NULL, NIL /* no fdw_private list */));
+
 	#ifdef DEBUG
 		ereport(NOTICE,
 			(errmsg("----> finishing odbcGetForeignPaths")
@@ -862,7 +862,7 @@ static ForeignScan* odbcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel,
 	return make_foreignscan(tlist, scan_clauses,
                                 scan_relid, NIL, NIL,
                                 NIL /* fdw_scan_tlist */, NIL, /* fdw_recheck_quals */
-                                NIL /* outer_plan */ );
+                                NULL /* outer_plan */ );
 }
 
 /* routines for versions older than 9.2.0 */

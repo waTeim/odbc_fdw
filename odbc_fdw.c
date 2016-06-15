@@ -61,6 +61,9 @@ PG_MODULE_MAGIC;
 #define PROCID_TEXTEQ 67
 #define PROCID_TEXTCONST 25
 
+#define TMPHACK 1
+#define MAXCOLS 100
+
 
 typedef struct odbcFdwExecutionState
 {
@@ -76,8 +79,13 @@ typedef struct odbcFdwExecutionState
     int				num_of_table_cols;
     StringInfoData	*table_columns;
     bool			first_iteration;
+    #if defined (TMPHACK)
+    int col_position_mask[MAXCOLS];
+    int col_size_array[MAXCOLS];
+    #else
     List			*col_position_mask;
     List			*col_size_array;
+    #endif
     char			*sql_count;
 } odbcFdwExecutionState;
 
@@ -788,11 +796,11 @@ static void odbcEstimateCosts(PlannerInfo *root, RelOptInfo *baserel, Cost *star
                    &sql_count, &username, &password, &col_mapping_list);
 
     odbcGetTableSize(svr_dsn, svr_database, svr_schema, svr_table, username, password, sql_count, &table_size);
-	
+
 	*startup_cost = 25;
-		
+
 	*total_cost = baserel->rows + *startup_cost;
-	
+
 	#ifdef DEBUG
 		ereport(NOTICE,
 			(errmsg("----> finishing odbcEstimateCosts")
@@ -804,16 +812,16 @@ static void odbcGetForeignPaths(PlannerInfo *root, RelOptInfo *baserel, Oid fore
 {
 	Cost startup_cost;
 	Cost total_cost;
-	
+
 	#ifdef DEBUG
 		ereport(NOTICE,
 			(errmsg("----> starting odbcGetForeignPaths")
 			));
 	#endif
-	
+
 	odbcEstimateCosts(root, baserel, &startup_cost, &total_cost, foreigntableid);
-	
-	add_path(baserel, 
+
+	add_path(baserel,
 		(Path *) create_foreignscan_path(root, baserel, baserel->rows, startup_cost, total_cost,
 			NIL, NULL, NULL, NIL /* no fdw_private list */));
 
@@ -831,13 +839,13 @@ static bool odbcAnalyzeForeignTable(Relation relation, AcquireSampleRowsFunc *fu
 			(errmsg("----> starting odbcAnalyzeForeignTable")
 			));
 	#endif
-	
+
 	#ifdef DEBUG
 		ereport(NOTICE,
 			(errmsg("----> finishing odbcAnalyzeForeignTable")
 			));
 	#endif
-	
+
 	return false;
 }
 
@@ -850,15 +858,15 @@ static ForeignScan* odbcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel,
 			(errmsg("----> starting odbcGetForeignPlan")
 			));
 	#endif
-	
+
 	scan_clauses = extract_actual_clauses(scan_clauses, false);
-	
+
 	#ifdef DEBUG
 		ereport(NOTICE,
 			(errmsg("----> finishing odbcGetForeignPlan")
 			));
 	#endif
-	
+
 	return make_foreignscan(tlist, scan_clauses,
                                 scan_relid, NIL, NIL,
                                 NIL /* fdw_scan_tlist */, NIL, /* fdw_recheck_quals */
@@ -1194,8 +1202,10 @@ odbcIterateForeignScan(ForeignScanState *node)
     int num_of_table_cols = festate->num_of_table_cols;
     int num_of_result_cols;
     StringInfoData	*table_columns = festate->table_columns;
+    #if !defined (TMPHACK)
     List *col_position_mask = NIL;
     List *col_size_array = NIL;
+    #endif
 
 #ifdef DEBUG
     elog(NOTICE, "odbcIterateForeignScan");
@@ -1204,6 +1214,20 @@ odbcIterateForeignScan(ForeignScanState *node)
     ret = SQLFetch(stmt);
 
     SQLNumResultCols(stmt, &columns);
+
+    #if defined (TMPHACK)
+    if (columns > MAXCOLS)
+    {
+      ereport(ERROR,
+              (errcode(ERRCODE_FDW_INVALID_OPTION_NAME),
+               errmsg("Too many columns %i", columns),
+               errhint("Number of columns is limited to %i", MAXCOLS)
+              ));
+      return slot;
+
+    }
+    #endif
+
 
 #ifdef DEBUG
     elog(NOTICE, "num of columns (iterate): %i", (int) columns);
@@ -1225,9 +1249,11 @@ odbcIterateForeignScan(ForeignScanState *node)
         int k;
         bool found;
 
+        #if !defined (TMPHACK)
         /* Allocate memory for the masks */
         col_position_mask = NIL;
         col_size_array = NIL;
+        #endif
         num_of_result_cols = columns;
         /* Obtain the column information of the first row. */
         for (i = 1; i <= columns; i++)
@@ -1263,30 +1289,51 @@ odbcIterateForeignScan(ForeignScanState *node)
                     elog(NOTICE, "I value: %i", i-1);
                     elog(NOTICE, "K value: %i", k);
 #endif
+                    #if defined (TMPHACK)
+                    festate->col_position_mask[i-1] = k;
+                    festate->col_size_array[i-1] =  (int) ColumnSizePtr;
+                    #else
                     col_position_mask = lappend_int(col_position_mask, k);
                     col_size_array = lappend_int(col_size_array, (int) ColumnSizePtr);
+                    #endif
                     break;
                 }
             }
             /* if current column is not used by the foreign table */
             if (!found)
             {
+                #if defined (TMPHACK)
+                festate->col_position_mask[i-1] = -1;
+                festate->col_size_array[i-1] =  -1;
+                #else
                 col_position_mask = lappend_int(col_position_mask, -1);
                 col_size_array = lappend_int(col_size_array, -1);
+                #endif
             }
 
             pfree(ColumnName);
         }
         festate->num_of_result_cols = num_of_result_cols;
+        // TODO: this is buggy: since this is called in a short-lived
+        // memory context; any heap-allocated will be freed between calls,
+        // so it can be corrupted at any time.
+        // Currently we have col_position_mask and col_size_array living
+        // in the heap. To minimize change of corruption we'll copy it here
+        // and before using it in other calls.
+        #if !defined (TMPHACK)
         festate->col_position_mask = list_copy(col_position_mask);
         festate->col_size_array = list_copy(col_size_array);
+        #endif
         festate->first_iteration = FALSE;
     }
     else
     {
         num_of_result_cols = festate->num_of_result_cols;
-        col_position_mask = list_copy(festate->col_position_mask);
-        col_size_array = list_copy(festate->col_size_array);
+        #if !defined (TMPHACK)
+        // reduce chance of memory corruption
+        festate->col_position_mask = col_position_mask = list_copy(festate->col_position_mask);
+        festate->col_size_array = col_size_array = list_copy(festate->col_size_array);
+        #endif
     }
 
     ExecClearTuple(slot);
@@ -1302,18 +1349,25 @@ odbcIterateForeignScan(ForeignScanState *node)
             char * buf;
 
             int mask_index = i - 1;
+            #if defined (TMPHACK)
+            int col_size = festate->col_size_array[mask_index];
+            int mapped_pos = festate->col_position_mask[mask_index];
+            #else
             int col_size = list_nth_int(col_size_array, mask_index);
             int mapped_pos = list_nth_int(col_position_mask, mask_index);
+            #endif
 
 #ifdef DEBUG
             /* Dump the content of the mask */
 			int p;
             elog(NOTICE, "Mask index: %i", mask_index);
+            #if !defined (TMPHACK)
             elog(NOTICE, "Content of the mask:");
             for (p=0; p<num_of_result_cols; p++)
             {
                 elog(NOTICE, "%i => %i (%i)", p, list_nth_int(col_position_mask, p), list_nth_int(col_size_array, p));
             }
+            #endif
 #endif
             /* Ignore this column if position is marked as invalid */
             if (mapped_pos == -1)

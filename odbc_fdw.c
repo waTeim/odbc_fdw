@@ -1321,7 +1321,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 static TupleTableSlot *
 odbcIterateForeignScan(ForeignScanState *node)
 {
-    EState	   *estate = node->ss.ps.state;
+    EState *executor_state = node->ss.ps.state;
     MemoryContext prev_context;
     /* ODBC API return status */
     SQLRETURN ret;
@@ -1370,7 +1370,7 @@ odbcIterateForeignScan(ForeignScanState *node)
 
         /* Allocate memory for the masks in a memory context that
            persists between IterateForeignScan calls */
-        prev_context = MemoryContextSwitchTo(estate->es_query_cxt);
+        prev_context = MemoryContextSwitchTo(executor_state->es_query_cxt);
         col_position_mask = NIL;
         col_size_array = NIL;
         num_of_result_cols = columns;

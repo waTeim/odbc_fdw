@@ -62,10 +62,14 @@ PG_MODULE_MAGIC;
 #define PROCID_TEXTCONST 25
 
 
+
 typedef struct odbcFdwExecutionState
 {
     AttInMetadata	*attinmeta;
     char			*svr_dsn;
+    char			*svr_driver;
+    char			*svr_host;
+    char			*svr_port;
     char			*svr_database;
     char			*svr_schema;
     char			*svr_table;
@@ -95,9 +99,12 @@ static struct odbcFdwOption valid_options[] =
 {
     /* Foreign server options */
     { "dsn",    ForeignServerRelationId },
+    { "driver",    ForeignServerRelationId },
+    { "host",   ForeignServerRelationId },
+    { "port",   ForeignServerRelationId },
+    { "database",   ForeignServerRelationId },
 
     /* Foreign table options */
-    { "database",   ForeignTableRelationId },
     { "schema",		ForeignTableRelationId },
     { "table",		ForeignTableRelationId },
     { "sql_query",	ForeignTableRelationId },
@@ -135,7 +142,7 @@ static void odbcGetForeignRelSize(PlannerInfo *root, RelOptInfo *baserel, Oid fo
 static void odbcEstimateCosts(PlannerInfo *root, RelOptInfo *baserel, Cost *startup_cost, Cost *total_cost, Oid foreigntableid);
 static void odbcGetForeignPaths(PlannerInfo *root, RelOptInfo *baserel, Oid foreigntableid);
 static bool odbcAnalyzeForeignTable(Relation relation, AcquireSampleRowsFunc *func, BlockNumber *totalpages);
-static ForeignScan* odbcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel, Oid foreigntableid, ForeignPath *best_path, List *tlist, List *scan_clauses);
+static ForeignScan* odbcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel, Oid foreigntableid, ForeignPath *best_path, List *tlist, List *scan_clauses, Plan *outer_plan);
 /* routines for versions older than 9.2.0 */
 #else
 static FdwPlan *odbcPlanForeignScan(Oid foreigntableid, PlannerInfo *root, RelOptInfo *baserel);
@@ -178,16 +185,19 @@ odbc_fdw_handler(PG_FUNCTION_ARGS)
 Datum
 odbc_fdw_validator(PG_FUNCTION_ARGS)
 {
-    List	*options_list = untransformRelOptions(PG_GETARG_DATUM(0));
-    Oid		catalog = PG_GETARG_OID(1);
-    char	*dsn = NULL;
-    char	*svr_database = NULL;
-    char	*svr_schema = NULL;
-    char	*svr_table = NULL;
-    char	*sql_query = NULL;
-    char	*sql_count = NULL;
-    char	*username = NULL;
-    char	*password = NULL;
+    List  *options_list = untransformRelOptions(PG_GETARG_DATUM(0));
+    Oid   catalog = PG_GETARG_OID(1);
+    char  *dsn          = NULL;
+    char  *driver       = NULL;
+    char  *svr_host     = NULL;
+    char  *svr_port     = NULL;
+    char  *svr_database = NULL;
+    char  *svr_schema   = NULL;
+    char  *svr_table    = NULL;
+    char  *sql_query    = NULL;
+    char  *sql_count    = NULL;
+    char  *username     = NULL;
+    char  *password     = NULL;
     ListCell	*cell;
 
 #ifdef DEBUG
@@ -236,6 +246,33 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
                                ));
 
             dsn = defGetString(def);
+        }
+        else if (strcmp(def->defname, "driver") == 0)
+        {
+            if (driver)
+                ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
+                                errmsg("conflicting or redundant options: driver (%s)", defGetString(def))
+                               ));
+
+            driver = defGetString(def);
+        }
+        else if (strcmp(def->defname, "host") == 0)
+        {
+            if (svr_host)
+                ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
+                                errmsg("conflicting or redundant options: host (%s)", defGetString(def))
+                               ));
+
+            svr_host = defGetString(def);
+        }
+        else if (strcmp(def->defname, "port") == 0)
+        {
+            if (svr_port)
+                ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
+                                errmsg("conflicting or redundant options: port (%s)", defGetString(def))
+                               ));
+
+            svr_port = defGetString(def);
         }
         else if (strcmp(def->defname, "database") == 0)
         {
@@ -309,23 +346,34 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
     }
 
     /* Complain about missing essential options: dsn */
-    if (!dsn && catalog == ForeignServerRelationId)
+    if (!dsn && !driver && catalog == ForeignServerRelationId)
         ereport(ERROR,
                 (errcode(ERRCODE_SYNTAX_ERROR),
-                 errmsg("missing eaaential information: dsn (Database Source Name)")
+                 errmsg("missing essential information: dsn (Database Source Name) or driver")
                 ));
 
 
     PG_RETURN_VOID();
 }
 
-
+/*
+ * Replace empty string by null pointer
+ */
+static void
+normalizeEmptyString(char **str)
+{
+  if (*str && !**str)
+  {
+    *str = NULL;
+  }
+}
 
 /*
  * Fetch the options for a odbc_fdw foreign table.
  */
 static void
-odbcGetOptions(Oid foreigntableid, char **svr_dsn, char **svr_database, char **svr_schema, char ** svr_table, char ** sql_query,
+odbcGetOptions(Oid foreigntableid, char **svr_dsn, char **svr_driver, char **svr_host, char **svr_port,
+               char **svr_database, char **svr_schema, char ** svr_table, char ** sql_query,
                char **sql_count, char **username, char **password, List **mapping_list)
 {
     ForeignTable	*table;
@@ -359,6 +407,24 @@ odbcGetOptions(Oid foreigntableid, char **svr_dsn, char **svr_database, char **s
         if (strcmp(def->defname, "dsn") == 0)
         {
             *svr_dsn = defGetString(def);
+            continue;
+        }
+
+        if (strcmp(def->defname, "driver") == 0)
+        {
+            *svr_driver = defGetString(def);
+            continue;
+        }
+
+        if (strcmp(def->defname, "host") == 0)
+        {
+            *svr_host = defGetString(def);
+            continue;
+        }
+
+        if (strcmp(def->defname, "port") == 0)
+        {
+            *svr_port = defGetString(def);
             continue;
         }
 
@@ -409,34 +475,18 @@ odbcGetOptions(Oid foreigntableid, char **svr_dsn, char **svr_database, char **s
     //elog(NOTICE, "list length: %i", (*mapping_list)->length);
 #endif
 
-    /* Default values, if required */
-    if (!*svr_dsn)
-        *svr_dsn = NULL;
-
-    if (!*svr_database)
-        *svr_database = NULL;
-
-    if (!*svr_schema)
-        *svr_schema = NULL;
-
-    if (!*svr_table)
-        *svr_table = NULL;
-
-    if (!*sql_query)
-    {
-        *sql_query = NULL;
-    }
-
-    if (!*sql_count)
-    {
-        *sql_count = NULL;
-    }
-
-    if (!*username)
-        *username = NULL;
-
-    if (!*password)
-        *password = NULL;
+    /* Convert empty strings to NULL pointers */
+    normalizeEmptyString(svr_dsn);
+    normalizeEmptyString(svr_driver);
+    normalizeEmptyString(svr_host);
+    normalizeEmptyString(svr_port);
+    normalizeEmptyString(svr_database);
+    normalizeEmptyString(svr_schema);
+    normalizeEmptyString(svr_table);
+    normalizeEmptyString(sql_query);
+    normalizeEmptyString(sql_count);
+    normalizeEmptyString(username);
+    normalizeEmptyString(password);
 }
 
 #ifdef DEBUG
@@ -512,12 +562,69 @@ getQuoteChar(SQLHDBC dbc, StringInfoData *q_char)
     appendStringInfo(q_char, "%s", (char *) quote_char);
 }
 
+static void odbcConnStr(StringInfoData *conn_str,
+                        char *svr_dsn, char *svr_driver, char *svr_host, char *svr_port,
+                        char *svr_database, char *username, char *password)
+{
+  bool sep = FALSE;
+  static char *sep_str = ";";
+  initStringInfo(conn_str);
+  if (svr_dsn)
+  {
+    appendStringInfo(conn_str, "DSN=%s", svr_dsn);
+    sep = TRUE;
+  }
+  if (svr_driver)
+  {
+    if (sep)
+      appendStringInfoString(conn_str, sep_str);
+    appendStringInfo(conn_str, "DRIVER=%s", svr_driver);
+    sep = TRUE;
+  }
+  if (svr_host)
+  {
+    if (sep)
+      appendStringInfoString(conn_str, sep_str);
+    appendStringInfo(conn_str, "SERVER=%s", svr_host);
+    sep = TRUE;
+  }
+  if (svr_port)
+  {
+    if (sep)
+      appendStringInfoString(conn_str, sep_str);
+    appendStringInfo(conn_str, "PORT=%s", svr_port);
+    sep = TRUE;
+  }
+  if (svr_database)
+  {
+    if (sep)
+      appendStringInfoString(conn_str, sep_str);
+    appendStringInfo(conn_str, "DATABASE=%s", svr_database);
+    sep = TRUE;
+  }
+  if (username)
+  {
+    if (sep)
+      appendStringInfoString(conn_str, sep_str);
+    appendStringInfo(conn_str, "UID=%s", username);
+    sep = TRUE;
+  }
+  if (password)
+  {
+    if (sep)
+      appendStringInfoString(conn_str, sep_str);
+    appendStringInfo(conn_str, "PWD=%s", password);
+    sep = TRUE;
+  }
+}
+
 
 /*
  * get table size of a table
  */
 static void
-odbcGetTableSize(char *svr_dsn, char *svr_database, char *svr_schema, char *svr_table,
+odbcGetTableSize(char *svr_dsn, char *svr_driver, char *svr_host, char *svr_port,
+                 char *svr_database, char *svr_schema, char *svr_table,
                  char *username, char *password, char *sql_count, unsigned int *size)
 {
     SQLHENV env;
@@ -536,9 +643,15 @@ odbcGetTableSize(char *svr_dsn, char *svr_database, char *svr_schema, char *svr_
     StringInfoData name_qualifier_char;
     StringInfoData quote_char;
 
+    const char* schema_name = svr_schema;
+
+    if (!schema_name || !*schema_name)
+    {
+      schema_name = svr_database;
+    }
+
     /* Construct connection string */
-    initStringInfo(&conn_str);
-    appendStringInfo(&conn_str, "DSN=%s;DATABASE=%s;UID=%s;PWD=%s;", svr_dsn, svr_database, username, password);
+    odbcConnStr(&conn_str, svr_dsn, svr_driver, svr_host, svr_port, svr_database, username, password);
 #ifdef DEBUG
     elog(NOTICE, "Connection string: %s", conn_str.data);
 #endif
@@ -575,7 +688,7 @@ odbcGetTableSize(char *svr_dsn, char *svr_database, char *svr_schema, char *svr_
 
         initStringInfo(&sql_str);
         appendStringInfo(&sql_str, "SELECT COUNT(*) FROM %s%s%s%s%s%s%s",
-                         quote_char.data, svr_schema, quote_char.data,
+                         quote_char.data, schema_name, quote_char.data,
                          name_qualifier_char.data,
                          quote_char.data, svr_table, quote_char.data);
     }
@@ -742,8 +855,11 @@ odbcIsValidOption(const char *option, Oid context)
 static void odbcGetForeignRelSize(PlannerInfo *root, RelOptInfo *baserel, Oid foreigntableid)
 {
     unsigned int table_size	= 0;
-    char *svr_dsn			= NULL;
-    char *svr_database		= NULL;
+    char *svr_dsn			  = NULL;
+    char *svr_driver	  = NULL;
+    char *svr_host    	= NULL;
+    char *svr_port    	= NULL;
+    char *svr_database	= NULL;
     char *svr_schema		= NULL;
     char *svr_table			= NULL;
     char *sql_query			= NULL;
@@ -757,10 +873,11 @@ static void odbcGetForeignRelSize(PlannerInfo *root, RelOptInfo *baserel, Oid fo
 #endif
 
     /* Fetch the foreign table options */
-    odbcGetOptions(foreigntableid, &svr_dsn, &svr_database, &svr_schema, &svr_table, &sql_query,
+    odbcGetOptions(foreigntableid, &svr_dsn, &svr_driver, &svr_host, &svr_port,
+                   &svr_database, &svr_schema, &svr_table, &sql_query,
                    &sql_count, &username, &password, &col_mapping_list);
 
-    odbcGetTableSize(svr_dsn, svr_database, svr_schema, svr_table, username, password, sql_count, &table_size);
+    odbcGetTableSize(svr_dsn, svr_driver, svr_host, svr_port, svr_database, svr_schema, svr_table, username, password, sql_count, &table_size);
 
     baserel->rows = table_size;
     baserel->tuples = baserel->rows;
@@ -769,8 +886,11 @@ static void odbcGetForeignRelSize(PlannerInfo *root, RelOptInfo *baserel, Oid fo
 static void odbcEstimateCosts(PlannerInfo *root, RelOptInfo *baserel, Cost *startup_cost, Cost *total_cost, Oid foreigntableid)
 {
     unsigned int table_size	= 0;
-    char *svr_dsn			= NULL;
-    char *svr_database		= NULL;
+    char *svr_dsn			  = NULL;
+    char *svr_driver	  = NULL;
+    char *svr_host    	= NULL;
+    char *svr_port    	= NULL;
+    char *svr_database	= NULL;
     char *svr_schema		= NULL;
     char *svr_table			= NULL;
     char *sql_query			= NULL;
@@ -784,15 +904,16 @@ static void odbcEstimateCosts(PlannerInfo *root, RelOptInfo *baserel, Cost *star
 #endif
 
     /* Fetch the foreign table options */
-    odbcGetOptions(foreigntableid, &svr_dsn, &svr_database, &svr_schema, &svr_table, &sql_query,
+    odbcGetOptions(foreigntableid, &svr_dsn, &svr_driver, &svr_host, &svr_port,
+                   &svr_database, &svr_schema, &svr_table, &sql_query,
                    &sql_count, &username, &password, &col_mapping_list);
 
-    odbcGetTableSize(svr_dsn, svr_database, svr_schema, svr_table, username, password, sql_count, &table_size);
-	
+    odbcGetTableSize(svr_dsn, svr_driver, svr_host, svr_port, svr_database, svr_schema, svr_table, username, password, sql_count, &table_size);
+
 	*startup_cost = 25;
-		
+
 	*total_cost = baserel->rows + *startup_cost;
-	
+
 	#ifdef DEBUG
 		ereport(NOTICE,
 			(errmsg("----> finishing odbcEstimateCosts")
@@ -804,19 +925,19 @@ static void odbcGetForeignPaths(PlannerInfo *root, RelOptInfo *baserel, Oid fore
 {
 	Cost startup_cost;
 	Cost total_cost;
-	
+
 	#ifdef DEBUG
 		ereport(NOTICE,
 			(errmsg("----> starting odbcGetForeignPaths")
 			));
 	#endif
-	
+
 	odbcEstimateCosts(root, baserel, &startup_cost, &total_cost, foreigntableid);
-	
-	add_path(baserel, 
+
+	add_path(baserel,
 		(Path *) create_foreignscan_path(root, baserel, baserel->rows, startup_cost, total_cost,
-			NIL, NULL, NIL, NIL /* no fdw_private list */));
-	
+			NIL, NULL, NULL, NIL /* no fdw_private list */));
+
 	#ifdef DEBUG
 		ereport(NOTICE,
 			(errmsg("----> finishing odbcGetForeignPaths")
@@ -831,18 +952,18 @@ static bool odbcAnalyzeForeignTable(Relation relation, AcquireSampleRowsFunc *fu
 			(errmsg("----> starting odbcAnalyzeForeignTable")
 			));
 	#endif
-	
+
 	#ifdef DEBUG
 		ereport(NOTICE,
 			(errmsg("----> finishing odbcAnalyzeForeignTable")
 			));
 	#endif
-	
+
 	return false;
 }
 
-static ForeignScan* odbcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel, 
-	Oid foreigntableid, ForeignPath *best_path, List *tlist, List *scan_clauses)
+static ForeignScan* odbcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel,
+	Oid foreigntableid, ForeignPath *best_path, List *tlist, List *scan_clauses, Plan *outer_plan)
 {
 	Index scan_relid = baserel->relid;
 	#ifdef DEBUG
@@ -850,19 +971,19 @@ static ForeignScan* odbcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel,
 			(errmsg("----> starting odbcGetForeignPlan")
 			));
 	#endif
-	
+
 	scan_clauses = extract_actual_clauses(scan_clauses, false);
-	
+
 	#ifdef DEBUG
 		ereport(NOTICE,
 			(errmsg("----> finishing odbcGetForeignPlan")
 			));
 	#endif
-	
+
 	return make_foreignscan(tlist, scan_clauses,
                                 scan_relid, NIL, NIL,
                                 NIL /* fdw_scan_tlist */, NIL, /* fdw_recheck_quals */
-                                NIL /* outer_plan */ );
+                                NULL /* outer_plan */ );
 }
 
 /* routines for versions older than 9.2.0 */
@@ -877,8 +998,11 @@ odbcPlanForeignScan(Oid foreigntableid, PlannerInfo *root, RelOptInfo *baserel)
 {
     FdwPlan	*fdwplan;
     unsigned int table_size	= 0;
-    char *svr_dsn			= NULL;
-    char *svr_database		= NULL;
+    char *svr_dsn			  = NULL;
+    char *svr_driver	  = NULL;
+    char *svr_host    	= NULL;
+    char *svr_port    	= NULL;
+    char *svr_database	= NULL;
     char *svr_schema		= NULL;
     char *svr_table			= NULL;
     char *sql_query			= NULL;
@@ -892,7 +1016,8 @@ odbcPlanForeignScan(Oid foreigntableid, PlannerInfo *root, RelOptInfo *baserel)
 #endif
 
     /* Fetch the foreign table options */
-    odbcGetOptions(foreigntableid, &svr_dsn, &svr_database, &svr_schema, &svr_table, &sql_query,
+    odbcGetOptions(foreigntableid, &svr_dsn, &svr_driver, &svr_host, &svr_port,
+                   &svr_database, &svr_schema, &svr_table, &sql_query,
                    &sql_count, &username, &password, &col_mapping_list);
 
     fdwplan = makeNode(FdwPlan);
@@ -904,7 +1029,7 @@ odbcPlanForeignScan(Oid foreigntableid, PlannerInfo *root, RelOptInfo *baserel)
     elog(NOTICE, "new total cost: %f", fdwplan->total_cost);
 #endif
 
-    odbcGetTableSize(svr_dsn, svr_database, svr_schema, svr_table, username, password, sql_count, &table_size);
+    odbcGetTableSize(svr_dsn, svr_driver, svr_host, svr_port, svr_database, svr_schema, svr_table, username, password, sql_count, &table_size);
 
     fdwplan->total_cost = fdwplan->total_cost + table_size;
 #ifdef DEBUG
@@ -939,14 +1064,17 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
     SQLUSMALLINT direction;
 #endif
 
-    char *svr_dsn		= NULL;
+    char *svr_dsn			  = NULL;
+    char *svr_driver	  = NULL;
+    char *svr_host    	= NULL;
+    char *svr_port    	= NULL;
     char *svr_database	= NULL;
-    char *svr_schema	= NULL;
-    char *svr_table		= NULL;
-    char *sql_query		= NULL;
-    char *sql_count		= NULL;
-    char *username		= NULL;
-    char *password		= NULL;
+    char *svr_schema  	= NULL;
+    char *svr_table		  = NULL;
+    char *sql_query		  = NULL;
+    char *sql_count		  = NULL;
+    char *username		  = NULL;
+    char *password	  	= NULL;
 
     StringInfoData conn_str;
 
@@ -965,15 +1093,25 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
     char	*qual_value = NULL;
     bool	pushdown = FALSE;
 
+    const char* schema_name = svr_schema;
+
+    if (!schema_name || !*schema_name)
+    {
+      schema_name = svr_database;
+    }
+
 #ifdef DEBUG
     elog(NOTICE, "odbcBeginForeignScan");
 #endif
 
     /* Fetch the foreign table options */
-    odbcGetOptions(RelationGetRelid(node->ss.ss_currentRelation), &svr_dsn, &svr_database, &svr_schema, &svr_table, &sql_query,
+    odbcGetOptions(RelationGetRelid(node->ss.ss_currentRelation), &svr_dsn, &svr_driver, &svr_host, &svr_port, &svr_database, &svr_schema, &svr_table, &sql_query,
                    &sql_count, &username, &password, &col_mapping_list);
 #ifdef DEBUG
     elog(NOTICE, "dsn: %s", svr_dsn);
+    elog(NOTICE, "driver: %s", svr_driver);
+    elog(NOTICE, "host: %s", svr_host);
+    elog(NOTICE, "port: %s", svr_port);
     elog(NOTICE, "db: %s", svr_database);
     elog(NOTICE, "schema: %s", svr_schema);
     elog(NOTICE, "table: %s", svr_table);
@@ -982,8 +1120,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
     elog(NOTICE, "username: %s", username);
     elog(NOTICE, "password: %s", password);
 #endif
-    initStringInfo(&conn_str);
-    appendStringInfo(&conn_str, "DSN=%s;DATABASE=%s;UID=%s;PWD=%s;", svr_dsn, svr_database, username, password);
+    odbcConnStr(&conn_str, svr_dsn, svr_driver, svr_host, svr_port, svr_database, username, password);
 
 #ifdef DEBUG
     elog(NOTICE, "connection string: %s", conn_str.data);
@@ -1136,7 +1273,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
         else
         {
             appendStringInfo(&sql, "SELECT %s FROM %s%s%s%s%s%s%s", col_str.data,
-                             (char *) quote_char, svr_schema, (char *) quote_char,
+                             (char *) quote_char, schema_name, (char *) quote_char,
                              (char *) name_qualifier_char, (char *) quote_char, svr_table, (char *) quote_char);
         }
     }
@@ -1158,6 +1295,9 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
     festate = (odbcFdwExecutionState *) palloc(sizeof(odbcFdwExecutionState));
     festate->attinmeta = TupleDescGetAttInMetadata(node->ss.ss_currentRelation->rd_att);
     festate->svr_dsn = svr_dsn;
+    festate->svr_driver = svr_driver;
+    festate->svr_host = svr_host;
+    festate->svr_port = svr_port;
     festate->svr_database = svr_database;
     festate->svr_schema = svr_schema;
     festate->svr_table = svr_table;
@@ -1181,6 +1321,8 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 static TupleTableSlot *
 odbcIterateForeignScan(ForeignScanState *node)
 {
+    EState *executor_state = node->ss.ps.state;
+    MemoryContext prev_context;
     /* ODBC API return status */
     SQLRETURN ret;
     odbcFdwExecutionState *festate = (odbcFdwExecutionState *) node->fdw_state;
@@ -1205,6 +1347,7 @@ odbcIterateForeignScan(ForeignScanState *node)
 
     SQLNumResultCols(stmt, &columns);
 
+
 #ifdef DEBUG
     elog(NOTICE, "num of columns (iterate): %i", (int) columns);
 #endif
@@ -1225,7 +1368,9 @@ odbcIterateForeignScan(ForeignScanState *node)
         int k;
         bool found;
 
-        /* Allocate memory for the masks */
+        /* Allocate memory for the masks in a memory context that
+           persists between IterateForeignScan calls */
+        prev_context = MemoryContextSwitchTo(executor_state->es_query_cxt);
         col_position_mask = NIL;
         col_size_array = NIL;
         num_of_result_cols = columns;
@@ -1278,14 +1423,16 @@ odbcIterateForeignScan(ForeignScanState *node)
             pfree(ColumnName);
         }
         festate->num_of_result_cols = num_of_result_cols;
-        festate->col_position_mask = list_copy(col_position_mask);
-        festate->col_size_array = list_copy(col_size_array);
+        festate->col_position_mask = col_position_mask;
+        festate->col_size_array = col_size_array;
         festate->first_iteration = FALSE;
+
+        MemoryContextSwitchTo(prev_context);
     }
     else
     {
         num_of_result_cols = festate->num_of_result_cols;
-        col_position_mask = list_copy(festate->col_position_mask);
+        col_position_mask = festate->col_position_mask;
         col_size_array = festate->col_size_array;
     }
 
@@ -1319,23 +1466,30 @@ odbcIterateForeignScan(ForeignScanState *node)
             if (mapped_pos == -1)
                 continue;
 
-            buf = (char *) palloc(sizeof(char) * col_size);
+            buf = (char *) palloc(sizeof(char) * (col_size+1));
 
-            /* retrieve column data as a string */
+            /* retrieve column data as a zero-terminated string */
             ret = SQLGetData(stmt, i, SQL_C_CHAR,
-                             buf, sizeof(char) * col_size, &indicator);
+                             buf, sizeof(char) * (col_size+1), &indicator);
 
             if (SQL_SUCCEEDED(ret))
             {
                 /* Handle null columns */
-                if (indicator == SQL_NULL_DATA) strcpy(buf, "NULL");
-                initStringInfo(&col_data);
-                appendStringInfoString (&col_data, buf);
+                if (indicator == SQL_NULL_DATA)
+                {
+                  // BuildTupleFromCStrings expects NULLs to be NULL pointers
+                  values[mapped_pos] = NULL;
+                }
+                else
+                {
+                  initStringInfo(&col_data);
+                  appendStringInfoString (&col_data, buf);
 
                 values[mapped_pos] = col_data.data;
 #ifdef DEBUG
                 elog(NOTICE, "values[%i] = %s", mapped_pos, values[mapped_pos]);
 #endif
+                }
             }
             pfree(buf);
         }
@@ -1370,7 +1524,8 @@ odbcExplainForeignScan(ForeignScanState *node, ExplainState *es)
 
     festate = (odbcFdwExecutionState *) node->fdw_state;
 
-    odbcGetTableSize(festate->svr_dsn, festate->svr_database, festate->svr_schema, festate->svr_table,
+    odbcGetTableSize(festate->svr_dsn, festate->svr_driver, festate->svr_host, festate->svr_port,
+                     festate->svr_database, festate->svr_schema, festate->svr_table,
                      festate->svr_username, festate->svr_password, festate->sql_count, &table_size);
 
     /* Suppress file size if we're not showing cost details */

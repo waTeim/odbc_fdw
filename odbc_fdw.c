@@ -349,7 +349,7 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
     if (!dsn && !driver && catalog == ForeignServerRelationId)
         ereport(ERROR,
                 (errcode(ERRCODE_SYNTAX_ERROR),
-                 errmsg("missing eaaential information: dsn (Database Source Name) or driver")
+                 errmsg("missing essential information: dsn (Database Source Name) or driver")
                 ));
 
 

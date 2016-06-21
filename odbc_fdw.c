@@ -185,19 +185,19 @@ odbc_fdw_handler(PG_FUNCTION_ARGS)
 Datum
 odbc_fdw_validator(PG_FUNCTION_ARGS)
 {
-    List	*options_list = untransformRelOptions(PG_GETARG_DATUM(0));
-    Oid		catalog = PG_GETARG_OID(1);
-    char	*dsn = NULL;
-    char	*driver = NULL;
-    char	*svr_host = NULL;
-    char	*svr_port = NULL;
-    char	*svr_database = NULL;
-    char	*svr_schema = NULL;
-    char	*svr_table = NULL;
-    char	*sql_query = NULL;
-    char	*sql_count = NULL;
-    char	*username = NULL;
-    char	*password = NULL;
+    List  *options_list = untransformRelOptions(PG_GETARG_DATUM(0));
+    Oid   catalog = PG_GETARG_OID(1);
+    char  *dsn          = NULL;
+    char  *driver       = NULL;
+    char  *svr_host     = NULL;
+    char  *svr_port     = NULL;
+    char  *svr_database = NULL;
+    char  *svr_schema   = NULL;
+    char  *svr_table    = NULL;
+    char  *sql_query    = NULL;
+    char  *sql_count    = NULL;
+    char  *username     = NULL;
+    char  *password     = NULL;
     ListCell	*cell;
 
 #ifdef DEBUG

@@ -356,7 +356,17 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
     PG_RETURN_VOID();
 }
 
-
+/*
+ * Replace empty string by null pointer
+ */
+static void
+normalizeEmptyString(char **str)
+{
+  if (*str && !**str)
+  {
+    *str = NULL;
+  }
+}
 
 /*
  * Fetch the options for a odbc_fdw foreign table.
@@ -465,43 +475,18 @@ odbcGetOptions(Oid foreigntableid, char **svr_dsn, char **svr_driver, char **svr
     //elog(NOTICE, "list length: %i", (*mapping_list)->length);
 #endif
 
-    /* Default values, if required */
-    if (!*svr_dsn)
-        *svr_dsn = NULL;
-
-    if (!*svr_driver)
-        *svr_driver = NULL;
-
-    if (!*svr_host)
-        *svr_host = NULL;
-
-    if (!*svr_port)
-        *svr_port = NULL;
-
-    if (!*svr_database)
-        *svr_database = NULL;
-
-    if (!*svr_schema)
-        *svr_schema = NULL;
-
-    if (!*svr_table)
-        *svr_table = NULL;
-
-    if (!*sql_query)
-    {
-        *sql_query = NULL;
-    }
-
-    if (!*sql_count)
-    {
-        *sql_count = NULL;
-    }
-
-    if (!*username)
-        *username = NULL;
-
-    if (!*password)
-        *password = NULL;
+    /* Convert empty strings to NULL pointers */
+    normalizeEmptyString(svr_dsn);
+    normalizeEmptyString(svr_driver);
+    normalizeEmptyString(svr_host);
+    normalizeEmptyString(svr_port);
+    normalizeEmptyString(svr_database);
+    normalizeEmptyString(svr_schema);
+    normalizeEmptyString(svr_table);
+    normalizeEmptyString(sql_query);
+    normalizeEmptyString(sql_count);
+    normalizeEmptyString(username);
+    normalizeEmptyString(password);
 }
 
 #ifdef DEBUG

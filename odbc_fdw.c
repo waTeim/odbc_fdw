@@ -45,11 +45,9 @@
 #include "utils/builtins.h"
 #include "utils/rel.h"
 
-#if (PG_VERSION_NUM >= 90200)
 #include "optimizer/pathnode.h"
 #include "optimizer/restrictinfo.h"
 #include "optimizer/planmain.h"
-#endif
 
 
 #include <stdio.h>
@@ -136,17 +134,11 @@ static void odbcBeginForeignScan(ForeignScanState *node, int eflags);
 static TupleTableSlot *odbcIterateForeignScan(ForeignScanState *node);
 static void odbcReScanForeignScan(ForeignScanState *node);
 static void odbcEndForeignScan(ForeignScanState *node);
-/* routines for 9.2.0+ */
-#if (PG_VERSION_NUM >= 90200)
 static void odbcGetForeignRelSize(PlannerInfo *root, RelOptInfo *baserel, Oid foreigntableid);
 static void odbcEstimateCosts(PlannerInfo *root, RelOptInfo *baserel, Cost *startup_cost, Cost *total_cost, Oid foreigntableid);
 static void odbcGetForeignPaths(PlannerInfo *root, RelOptInfo *baserel, Oid foreigntableid);
 static bool odbcAnalyzeForeignTable(Relation relation, AcquireSampleRowsFunc *func, BlockNumber *totalpages);
 static ForeignScan* odbcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel, Oid foreigntableid, ForeignPath *best_path, List *tlist, List *scan_clauses, Plan *outer_plan);
-/* routines for versions older than 9.2.0 */
-#else
-static FdwPlan *odbcPlanForeignScan(Oid foreigntableid, PlannerInfo *root, RelOptInfo *baserel);
-#endif
 
 
 
@@ -161,14 +153,10 @@ odbc_fdw_handler(PG_FUNCTION_ARGS)
 {
     FdwRoutine *fdwroutine = makeNode(FdwRoutine);
 	/* FIXME */
-	#if (PG_VERSION_NUM >= 90200)
 	fdwroutine->GetForeignRelSize = odbcGetForeignRelSize;
 	fdwroutine->GetForeignPaths = odbcGetForeignPaths;
 	fdwroutine->AnalyzeForeignTable = odbcAnalyzeForeignTable;
 	fdwroutine->GetForeignPlan = odbcGetForeignPlan;
-	#else
-    fdwroutine->PlanForeignScan = odbcPlanForeignScan;
-	#endif
     fdwroutine->ExplainForeignScan = odbcExplainForeignScan;
     fdwroutine->BeginForeignScan = odbcBeginForeignScan;
     fdwroutine->IterateForeignScan = odbcIterateForeignScan;
@@ -527,7 +515,7 @@ getNameQualifierChar(SQLHDBC dbc, StringInfoData *nq_char)
 {
     SQLCHAR name_qualifier_char[2];
 
-#ifdef DUBUG
+#ifdef DEBUG
     elog(NOTICE, "getNameQualifierChar");
 #endif
 
@@ -849,9 +837,6 @@ odbcIsValidOption(const char *option, Oid context)
 }
 
 
-/* routines for 9.2.0+ */
-#if (PG_VERSION_NUM >= 90200)
-
 static void odbcGetForeignRelSize(PlannerInfo *root, RelOptInfo *baserel, Oid foreigntableid)
 {
     unsigned int table_size	= 0;
@@ -985,60 +970,6 @@ static ForeignScan* odbcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel,
                                 NIL /* fdw_scan_tlist */, NIL, /* fdw_recheck_quals */
                                 NULL /* outer_plan */ );
 }
-
-/* routines for versions older than 9.2.0 */
-#else
-
-/*
- * odbcPlanForeignScan
- *		Create a FdwPlan for a scan on the foreign table
- */
-static FdwPlan *
-odbcPlanForeignScan(Oid foreigntableid, PlannerInfo *root, RelOptInfo *baserel)
-{
-    FdwPlan	*fdwplan;
-    unsigned int table_size	= 0;
-    char *svr_dsn			  = NULL;
-    char *svr_driver	  = NULL;
-    char *svr_host    	= NULL;
-    char *svr_port    	= NULL;
-    char *svr_database	= NULL;
-    char *svr_schema		= NULL;
-    char *svr_table			= NULL;
-    char *sql_query			= NULL;
-    char *sql_count			= NULL;
-    char *username			= NULL;
-    char *password			= NULL;
-    List *col_mapping_list;
-
-#ifdef DEBUG
-    elog(NOTICE, "odbcPlanForeignScan");
-#endif
-
-    /* Fetch the foreign table options */
-    odbcGetOptions(foreigntableid, &svr_dsn, &svr_driver, &svr_host, &svr_port,
-                   &svr_database, &svr_schema, &svr_table, &sql_query,
-                   &sql_count, &username, &password, &col_mapping_list);
-
-    fdwplan = makeNode(FdwPlan);
-    fdwplan->startup_cost = 10;
-    fdwplan->total_cost = 100 + fdwplan->startup_cost;
-    fdwplan->fdw_private = NIL;	/* not used */
-
-#ifdef DEBUG
-    elog(NOTICE, "new total cost: %f", fdwplan->total_cost);
-#endif
-
-    odbcGetTableSize(svr_dsn, svr_driver, svr_host, svr_port, svr_database, svr_schema, svr_table, username, password, sql_count, &table_size);
-
-    fdwplan->total_cost = fdwplan->total_cost + table_size;
-#ifdef DEBUG
-    elog(NOTICE, "new total cost: %f", fdwplan->total_cost);
-#endif
-    return fdwplan;
-}
-
-#endif
 
 /*
  * odbcBeginForeignScan

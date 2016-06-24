@@ -338,7 +338,7 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
  * Replace empty string by null pointer
  */
 static void
-normalizeEmptyString(char **str)
+normalize_empty_string(char **str)
 {
 	if (*str && !**str)
 	{
@@ -457,17 +457,17 @@ odbcGetOptions(Oid foreigntableid, char **svr_dsn, char **svr_driver, char **svr
 #endif
 
 	/* Convert empty strings to NULL pointers */
-	normalizeEmptyString(svr_dsn);
-	normalizeEmptyString(svr_driver);
-	normalizeEmptyString(svr_host);
-	normalizeEmptyString(svr_port);
-	normalizeEmptyString(svr_database);
-	normalizeEmptyString(svr_schema);
-	normalizeEmptyString(svr_table);
-	normalizeEmptyString(sql_query);
-	normalizeEmptyString(sql_count);
-	normalizeEmptyString(username);
-	normalizeEmptyString(password);
+	normalize_empty_string(svr_dsn);
+	normalize_empty_string(svr_driver);
+	normalize_empty_string(svr_host);
+	normalize_empty_string(svr_port);
+	normalize_empty_string(svr_database);
+	normalize_empty_string(svr_schema);
+	normalize_empty_string(svr_table);
+	normalize_empty_string(sql_query);
+	normalize_empty_string(sql_count);
+	normalize_empty_string(username);
+	normalize_empty_string(password);
 }
 
 #ifdef DEBUG

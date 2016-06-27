@@ -998,10 +998,6 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 	bool pushdown          = FALSE;
 
 	const char* schema_name = svr_schema;
-	if (!schema_name || !*schema_name)
-	{
-		schema_name = svr_database;
-	}
 
 	#ifdef DEBUG
 		elog(DEBUG1, "odbcBeginForeignScan");
@@ -1010,6 +1006,11 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 	/* Fetch the foreign table options */
 	odbcGetOptions(RelationGetRelid(node->ss.ss_currentRelation), &svr_dsn, &svr_driver, &svr_host, &svr_port, &svr_database, &svr_schema, &svr_table, &sql_query,
 	               &sql_count, &username, &password, &col_mapping_list);
+
+	if (!schema_name || !*schema_name)
+	{
+		schema_name = svr_database;
+	}
 
     odbcConnStr(&conn_str, svr_dsn, svr_driver, svr_host, svr_port, svr_database, username, password);
 

@@ -135,6 +135,7 @@ static void odbcEstimateCosts(PlannerInfo *root, RelOptInfo *baserel, Cost *star
 static void odbcGetForeignPaths(PlannerInfo *root, RelOptInfo *baserel, Oid foreigntableid);
 static bool odbcAnalyzeForeignTable(Relation relation, AcquireSampleRowsFunc *func, BlockNumber *totalpages);
 static ForeignScan* odbcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel, Oid foreigntableid, ForeignPath *best_path, List *tlist, List *scan_clauses, Plan *outer_plan);
+List* odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid);
 
 /*
  * helper functions
@@ -155,6 +156,7 @@ odbc_fdw_handler(PG_FUNCTION_ARGS)
 	fdwroutine->IterateForeignScan = odbcIterateForeignScan;
 	fdwroutine->ReScanForeignScan = odbcReScanForeignScan;
 	fdwroutine->EndForeignScan = odbcEndForeignScan;
+	fdwroutine->ImportForeignSchema = odbcImportForeignSchema;
 	PG_RETURN_POINTER(fdwroutine);
 }
 
@@ -347,32 +349,112 @@ normalize_empty_string(char **str)
 }
 
 /*
- * Fetch the options for a odbc_fdw foreign table.
+ * Map ODBC data types to PostgreSQL
  */
 static void
-odbcGetOptions(Oid foreigntableid, char **svr_dsn, char **svr_driver, char **svr_host, char **svr_port,
+sql_data_type(
+	SQLSMALLINT odbc_data_type,
+	SQLULEN     column_size,
+	SQLSMALLINT decimal_digits,
+	SQLSMALLINT nullable,
+	StringInfo sql_type
+)
+{
+	initStringInfo(sql_type);
+	switch(odbc_data_type)
+	{
+		case SQL_CHAR:
+		case SQL_WCHAR :
+			appendStringInfo(sql_type, "char(%u)", (unsigned)column_size);
+			break;
+		case SQL_VARCHAR :
+		case SQL_WVARCHAR :
+			appendStringInfo(sql_type, "varchar(%u)", (unsigned)column_size);
+			break;
+		case SQL_LONGVARCHAR :
+		case SQL_WLONGVARCHAR :
+		    appendStringInfo(sql_type, "text");
+			break;
+		case SQL_DECIMAL :
+			appendStringInfo(sql_type, "decimal(%u,%d)", (unsigned)column_size, decimal_digits);
+		    break;
+		case SQL_NUMERIC :
+			appendStringInfo(sql_type, "numeric(%u,%d)", (unsigned)column_size, decimal_digits);
+			break;
+		case SQL_INTEGER :
+		    appendStringInfo(sql_type, "integer");
+			break;
+		case SQL_REAL :
+			appendStringInfo(sql_type, "real");
+			break;
+		case SQL_FLOAT :
+			appendStringInfo(sql_type, "real");
+			break;
+		case SQL_DOUBLE :
+		   appendStringInfo(sql_type, "float8");
+			break;
+		case SQL_BIT :
+		    appendStringInfo(sql_type, "bit(1)");
+			break;
+		case SQL_SMALLINT :
+		case SQL_TINYINT :
+			appendStringInfo(sql_type, "smallint");
+			break;
+		case SQL_BIGINT :
+			appendStringInfo(sql_type, "bigint");
+			break;
+		case SQL_BINARY :
+		    appendStringInfo(sql_type, "bit(%u)", (unsigned)column_size);
+			break;
+		case SQL_VARBINARY :
+		    appendStringInfo(sql_type, "varbit(%u)", (unsigned)column_size);
+			break;
+		case SQL_LONGVARBINARY :
+			appendStringInfo(sql_type, "bytea");
+			break;
+		case SQL_TYPE_DATE :
+		case SQL_DATE :
+			appendStringInfo(sql_type, "date");
+			break;
+		case SQL_TYPE_TIME :
+		case SQL_TIME :
+		    appendStringInfo(sql_type, "time");
+			break;
+		case SQL_TYPE_TIMESTAMP :
+		case SQL_TIMESTAMP :
+			appendStringInfo(sql_type, "timestamp");
+			break;
+		default :
+			ereport(ERROR,
+			        (errcode(ERRCODE_FDW_INVALID_DATA_TYPE),
+			         errmsg("Data type not supported, code %d", odbc_data_type)
+			        ));
+	};
+}
+
+
+/*
+ * Fetch the options for a server and options list
+ */
+static void
+odbcGetOptions0(Oid server_oid, List *add_options, char **svr_dsn, char **svr_driver, char **svr_host, char **svr_port,
 			   char **svr_database, char **svr_schema, char ** svr_table, char ** sql_query,
 			   char **sql_count, char **username, char **password, List **mapping_list)
 {
-	ForeignTable    *table;
 	ForeignServer   *server;
 	UserMapping     *mapping;
 	List            *options;
 	ListCell        *lc;
 
 	#ifdef DEBUG
-		elog(DEBUG1, "odbcGetOptions");
+		elog(DEBUG1, "odbcGetOptions0");
 	#endif
 
-	/*
-	 * Extract options from FDW objects.
-	 */
-	table = GetForeignTable(foreigntableid);
-	server = GetForeignServer(table->serverid);
-	mapping = GetUserMapping(GetUserId(), table->serverid);
+    server  = GetForeignServer(server_oid);
+	mapping = GetUserMapping(GetUserId(), server_oid);
 
 	options = NIL;
-	options = list_concat(options, table->options);
+	options = list_concat(options, add_options);
 	options = list_concat(options, server->options);
 	options = list_concat(options, mapping->options);
 
@@ -449,6 +531,8 @@ odbcGetOptions(Oid foreigntableid, char **svr_dsn, char **svr_driver, char **svr
 		}
 
 		/* Column mapping goes here */
+		/* TODO: is this useful? if so, how can columns names coincident
+		   with option names be escaped? */
 		*mapping_list = lappend(*mapping_list, def);
 	}
 
@@ -466,6 +550,25 @@ odbcGetOptions(Oid foreigntableid, char **svr_dsn, char **svr_driver, char **svr
 	normalize_empty_string(password);
 }
 
+/*
+ * Fetch the options for a odbc_fdw foreign table.
+ */
+static void
+odbcGetOptions(Oid foreigntableid, char **svr_dsn, char **svr_driver, char **svr_host, char **svr_port,
+			   char **svr_database, char **svr_schema, char ** svr_table, char ** sql_query,
+			   char **sql_count, char **username, char **password, List **mapping_list)
+{
+	ForeignTable    *table;
+	ForeignServer   *server;
+
+	#ifdef DEBUG
+		elog(DEBUG1, "odbcGetOptions");
+	#endif
+
+	table = GetForeignTable(foreigntableid);
+    odbcGetOptions0(table->serverid, table->options, svr_dsn, svr_driver, svr_host, svr_port, svr_database, svr_schema, svr_table, sql_query, sql_count, username, password, mapping_list);
+}
+
 #ifdef DEBUG
 void static extract_error(char *fn,
                           SQLHANDLE handle,
@@ -478,7 +581,9 @@ void static extract_error(char *fn,
 	SQLSMALLINT  len;
 	SQLRETURN    ret;
 
-	elog(DEBUG1,
+	return;
+
+	elog(NOTICE,
 		 "\n"
 		 "The driver reported the following diagnostics whilst running "
 		 "%s\n\n",
@@ -489,7 +594,9 @@ void static extract_error(char *fn,
 		ret = SQLGetDiagRec(type, handle, ++i, state, &native, text,
 		                    sizeof(text), &len );
 		if (SQL_SUCCEEDED(ret))
-			elog(DEBUG1, "%s:%ld:%ld:%s\n", state, (long int) i, (long int) native, text);
+			elog(NOTICE, "> %s:%ld:%ld:%s\n", state, (long int) i, (long int) native, text);
+		else
+			elog(NOTICE, "> METAERROR %d\n", ret);
 	}
 	while( ret == SQL_SUCCESS );
 }
@@ -508,10 +615,12 @@ getNameQualifierChar(SQLHDBC dbc, StringInfoData *nq_char)
 	#endif
 
 	SQLGetInfo(dbc,
-	           SQL_QUALIFIER_NAME_SEPARATOR,
+	           SQL_CATALOG_NAME_SEPARATOR,
 	           (SQLPOINTER)&name_qualifier_char,
 	           2,
 	           NULL);
+	name_qualifier_char[1] = 0; // some drivers fail to copy the trailing zero
+
 	initStringInfo(nq_char);
 	appendStringInfo(nq_char, "%s", (char *) name_qualifier_char);
 }
@@ -533,6 +642,7 @@ getQuoteChar(SQLHDBC dbc, StringInfoData *q_char)
 	           (SQLPOINTER)&quote_char,
 	            2,
 	            NULL);
+	quote_char[1] = 0; // some drivers fail to copy the trailing zero
 
 	initStringInfo(q_char);
 	appendStringInfo(q_char, "%s", (char *) quote_char);
@@ -622,7 +732,8 @@ odbcGetTableSize(char *svr_dsn, char *svr_driver, char *svr_host, char *svr_port
 
 	if (!schema_name || !*schema_name)
 	{
-	       schema_name = svr_database;
+		/* TODO: this is just a MySQL convenience; should remove it? */
+		schema_name = svr_database;
 	}
 
 	/* Construct connection string */
@@ -653,6 +764,8 @@ odbcGetTableSize(char *svr_dsn, char *svr_driver, char *svr_host, char *svr_port
 
 	if (sql_count == NULL)
 	{
+		/* TODO: if use sql_query if present and wrap it with SELECT COUNT(*) */
+
 		/* Get quote char */
 		getQuoteChar(dbc, &quote_char);
 
@@ -670,6 +783,7 @@ odbcGetTableSize(char *svr_dsn, char *svr_driver, char *svr_host, char *svr_port
 		initStringInfo(&sql_str);
 		appendStringInfo(&sql_str, "%s", sql_count);
 	}
+
 
 	ret = SQLExecDirect(stmt, (SQLCHAR *) sql_str.data, SQL_NTS);
 	if (SQL_SUCCEEDED(ret))
@@ -1009,6 +1123,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 
 	if (!schema_name || !*schema_name)
 	{
+		/* TODO: this is just a MySQL convenience; should remove it? */
 		schema_name = svr_database;
 	}
 
@@ -1105,6 +1220,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 	initStringInfo(&sql);
 	if (pushdown)
 	{
+		/* TODO: this should use quote_char, etc. as below */
 		appendStringInfo(&sql, "SELECT %s FROM `%s`.`%s` WHERE `%s` = '%s'",
 		                 col_str.data, svr_database, svr_table, qual_key, qual_value);
 	}
@@ -1125,6 +1241,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 
 	/* Allocate a statement handle */
 	SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
+
 	/* Retrieve a list of rows */
 	SQLExecDirect(stmt, (SQLCHAR *) sql.data, SQL_NTS);
 	SQLNumResultCols(stmt, &result_columns);
@@ -1198,6 +1315,20 @@ odbcIterateForeignScan(ForeignScanState *node)
 		int k;
 		bool found;
 
+        StringInfoData sql_type;
+
+        SQLPOINTER      CharacterAttributePtr;
+        SQLSMALLINT     BufferLength;
+        SQLSMALLINT    ActualLengthPtr;
+        SQLULEN        NumericAttribute;
+		SQLCHAR *buffer;
+		BufferLength = 1024;
+		buffer = (SQLCHAR*)malloc( BufferLength*sizeof(char) );
+
+
+
+
+
 		/* Allocate memory for the masks in a memory context that
 		   persists between IterateForeignScan calls */
 		prev_context = MemoryContextSwitchTo(executor_state->es_query_cxt);
@@ -1218,6 +1349,8 @@ odbcIterateForeignScan(ForeignScanState *node)
 			               &ColumnSizePtr,
 			               &DecimalDigitsPtr,
 			               &NullablePtr);
+
+			sql_data_type(DataTypePtr, ColumnSizePtr, DecimalDigitsPtr, NullablePtr, &sql_type);
 
 			/* Get the position of the column in the FDW table */
 			for (k=0; k<num_of_table_cols; k++)
@@ -1275,6 +1408,21 @@ odbcIterateForeignScan(ForeignScanState *node)
 			buf = (char *) palloc(sizeof(char) * (col_size+1));
 
 			/* retrieve column data as a zero-terminated string */
+			/* TODO:
+			   binary fields (SQL_C_BIT, SQL_C_BINARY) do not have
+			   a traling zero; they should be copied as now but without
+			   adding 1 to col_size, or using SQL_C_BIT or SQL_C_BINARY
+			   and then encoded into a binary PG literal (e.g. X'...'
+			   or B'...')
+			   Also, fot text columns, the foreign server/table encoding
+			   should have been defined and here we should translate to
+			   the destination encoding (e.g. UTF-8).
+			   For floating point types we should use SQL_C_FLOAT/SQL_C_DOUBLE
+			   to avoid precision loss.
+			   For date/time/timestamp these structures can be used:
+			   SQL_C_TYPE_DATE/SQL_C_TYPE_TIME/SQL_C_TYPE_TIMESTAMP.
+			   And finally, SQL_C_NUMERIC and SQL_C_GUID could also be used.
+			*/
 			ret = SQLGetData(stmt, i, SQL_C_CHAR,
 							 buf, sizeof(char) * (col_size+1), &indicator);
 
@@ -1301,6 +1449,13 @@ odbcIterateForeignScan(ForeignScanState *node)
 		ExecStoreTuple(tuple, slot, InvalidBuffer, false);
 		pfree(values);
 	}
+	else
+	{
+		// SQL_NO_DATA
+		elog(NOTICE, "ERROR %d", ret);
+		extract_error("SQLGetTypeInfo", stmt, SQL_HANDLE_STMT);
+	}
+
 
 	return slot;
 }
@@ -1367,4 +1522,206 @@ odbcReScanForeignScan(ForeignScanState *node)
 	#ifdef DEBUG
 		elog(DEBUG1, "odbcReScanForeignScan");
 	#endif
+}
+
+
+List *
+odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
+{
+	char *svr_dsn             = NULL;
+	char *svr_driver          = NULL;
+	char *svr_host            = NULL;
+	char *svr_port            = NULL;
+	char *svr_database        = NULL;
+	char *svr_schema          = NULL;
+	char *svr_table           = NULL;
+	char *sql_query           = NULL;
+	char *sql_count           = NULL;
+	char *username            = NULL;
+	char *password            = NULL;
+	List *col_mapping_list;
+	char *create = "CREATE FOREIGN TABLE sales_x ("
+                   "  sale_date timestamp without time zone,"
+                   "  state varchar(2),"
+					"  product_id int,"
+					"  client_id int,"
+					"  total int)"
+					"  SERVER odbc_my_server"
+					"  OPTIONS ("
+				    "	    database 'bigco',"
+					"        table 'sales',"
+					"        sql_query 'select * from sales',"
+					"        sql_count 'select count(*) from sales',"
+			        "        username 'jgoizueta',"
+			        "        password '123'"
+					"  );";
+
+	List* create_statements = NIL;
+	List* tables = NIL;
+	List* table_columns = NIL;
+	ListCell *tables_cell;
+	ListCell *table_columns_cell;
+
+	StringInfoData  conn_str;
+	SQLHENV env;
+	SQLHDBC dbc;
+	SQLHSTMT query_stmt;
+	SQLRETURN ret;
+	SQLCHAR OutConnStr[1024];
+	SQLSMALLINT OutConnStrLen;
+	SQLSMALLINT result_columns;
+	StringInfoData col_str;
+	SQLCHAR *ColumnName;
+	SQLSMALLINT NameLength;
+	SQLSMALLINT DataType;
+	SQLULEN     ColumnSize;
+	SQLSMALLINT DecimalDigits;
+	SQLSMALLINT Nullable;
+	int i;
+	StringInfoData sql_type;
+	StringInfoData name_qualifier_char;
+	StringInfoData quote_char;
+
+
+	#ifdef DEBUG
+		elog(DEBUG1, "odbcImportForeignSchema");
+	#endif
+
+	odbcGetOptions0(serverOid, stmt->options, &svr_dsn, &svr_driver, &svr_host, &svr_port,
+	               &svr_database, &svr_schema, &svr_table, &sql_query,
+	               &sql_count, &username, &password, &col_mapping_list);
+
+	if (sql_query)
+	{
+		/* Generate foreign table for a query */
+		if (!svr_table)
+		{
+			/* TODO: error */
+			elog(ERROR, "Must provide 'table' option to name the foreign table");
+		}
+
+		odbcConnStr(&conn_str, svr_dsn, svr_driver, svr_host, svr_port, svr_database, username, password);
+
+		/* Allocate an environment handle */
+		SQLAllocHandle(SQL_HANDLE_ENV, SQL_NULL_HANDLE, &env);
+		/* We want ODBC 3 support */
+		SQLSetEnvAttr(env, SQL_ATTR_ODBC_VERSION, (void *) SQL_OV_ODBC3, 0);
+
+		/* Allocate a connection handle */
+		SQLAllocHandle(SQL_HANDLE_DBC, env, &dbc);
+		/* Connect to the DSN */
+		ret = SQLDriverConnect(dbc, NULL, (SQLCHAR *) conn_str.data, SQL_NTS,
+		                       OutConnStr, 1024, &OutConnStrLen, SQL_DRIVER_COMPLETE);
+
+		#ifdef DEBUG
+			if (SQL_SUCCEEDED(ret))
+				elog(DEBUG1, "Successfully connected to driver");
+			else
+			{
+				extract_error("SQLDriverConnect", dbc, SQL_HANDLE_DBC);
+			}
+		#endif
+
+		/* Get quote char */
+		getQuoteChar(dbc, &quote_char);
+
+		/* Get name qualifier char */
+		getNameQualifierChar(dbc, &name_qualifier_char);
+
+
+		/* Allocate a statement handle */
+		SQLAllocHandle(SQL_HANDLE_STMT, dbc, &query_stmt);
+
+		/* Retrieve a list of rows */
+		SQLExecDirect(query_stmt, (SQLCHAR *) sql_query, SQL_NTS);
+		SQLNumResultCols(query_stmt, &result_columns);
+
+		initStringInfo(&col_str);
+		ColumnName = (SQLCHAR *) palloc(sizeof(SQLCHAR) * 255);
+
+		for (i = 1; i <= result_columns; i++)
+		{
+			SQLDescribeCol(query_stmt,
+			               i,                       /* ColumnName */
+			               ColumnName,
+			               sizeof(SQLCHAR) * 255, /* BufferLength */
+			               &NameLength,
+			               &DataType,
+			               &ColumnSize,
+			               &DecimalDigits,
+			               &Nullable);
+
+			sql_data_type(DataType, ColumnSize, DecimalDigits, Nullable, &sql_type);
+			if (i > 1)
+			{
+				appendStringInfo(&col_str, ", ");
+			}
+			appendStringInfo(&col_str, "\"%s\" %s", ColumnName, (char *) sql_type.data);
+		}
+
+		tables        = lappend(tables, (void*)svr_table);
+		table_columns = lappend(table_columns, (void*)col_str.data);
+	}
+	else
+	{
+		// TODO: if svr_table, should it take precedence over LIMIT_TO/EXCEPT?
+		//      should it be merged with LIMIT_TO ?
+
+		/* Reflect one or more foreign tables */
+		if (stmt->list_type == FDW_IMPORT_SCHEMA_ALL || stmt->list_type == FDW_IMPORT_SCHEMA_EXCEPT)
+		{
+			// TODO: Use SQLTables to obtain remote table names -> tables
+		    if (stmt->list_type == FDW_IMPORT_SCHEMA_EXCEPT)
+			{
+				// TODO: remove tables in stmt->table_list from tables
+			}
+		}
+		else if (stmt->list_type == FDW_IMPORT_SCHEMA_LIMIT_TO)
+		{
+			tables = stmt->table_list;
+		}
+		else
+		{
+			elog(NOTICE,"UNKNOWN");
+		}
+        foreach(tables_cell, tables)
+		{
+			/* TODO: for each table, SQLColumns to obtain its columns */
+		}
+	}
+
+	/* Generate create statements */
+	table_columns_cell = list_head(table_columns);
+	foreach(tables_cell, tables)
+	{
+		// temporarily define vars here...
+		char *table_name = (char*)lfirst(tables_cell);
+		char *columns    = (char*)lfirst(table_columns_cell);
+		table_columns_cell = lnext(table_columns_cell);
+        StringInfoData create_statement;
+		ListCell *option;
+		int first_option = TRUE;
+		initStringInfo(&create_statement);
+		appendStringInfo(&create_statement, "CREATE FOREIGN TABLE \"%s\" (", (char *) svr_table);
+		appendStringInfo(&create_statement, "%s", columns);
+		appendStringInfo(&create_statement, ") SERVER %s\n", stmt->server_name);
+		appendStringInfo(&create_statement, "OPTIONS (\n");
+		foreach(option, stmt->options)
+		{
+			DefElem *def = (DefElem *) lfirst(option);
+            if (!first_option)
+			{
+				appendStringInfo(&create_statement, ",\n");
+			}
+			else
+			{
+				first_option = FALSE;
+			}
+		    appendStringInfo(&create_statement, "%s '%s'", def->defname, defGetString(def));
+		}
+		appendStringInfo(&create_statement, ");");
+		create_statements = lappend(create_statements, (void*)create_statement.data);
+	}
+
+   return create_statements;
 }

@@ -892,6 +892,7 @@ odbcGetTableSize(odbcFdwOptions* options, unsigned int *size)
 		}
 		else
 		{
+			// TODO: remove trailing semicolong from options->sql_query if present
 			appendStringInfo(&sql_str, "SELECT COUNT(*) FROM (%s) AS _odbc_fwd_count_wrapped", options->sql_query);
 		}
 	}

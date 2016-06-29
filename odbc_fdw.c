@@ -127,29 +127,6 @@ static struct odbcFdwOption valid_options[] =
 	{ NULL,       InvalidOid}
 };
 
-
-/*
- * Replace empty string by null pointer
- */
-static void
-normalize_empty_string(char **str)
-{
-	if (*str && !**str)
-	{
-		*str = NULL;
-	}
-}
-
-/*
- * Avoid NULL string: return original string, or empty string if NULL
- */
-static char*
-empty_string_if_null(char *string)
-{
-	static char* empty_string = "";
-	return string == NULL ? empty_string : string;
-}
-
 /*
  * SQL functions
  */
@@ -178,6 +155,18 @@ List* odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid);
  * helper functions
  */
 static bool odbcIsValidOption(const char *option, Oid context);
+static void check_return(SQLRETURN ret, char *msg, SQLHANDLE handle, SQLSMALLINT type);
+static void normalize_empty_string(char **str);
+static char* empty_string_if_null(char *string);
+static void extract_odbcFdwOptions(List *options_list, odbcFdwOptions *extracted_options);
+void init_odbcFdwOptions(odbcFdwOptions* options);
+void copy_odbcFdwOptions(odbcFdwOptions* to, odbcFdwOptions* from);
+static void odbc_connection(odbcFdwOptions* options, SQLHENV *env, SQLHDBC *dbc);
+static void sql_data_type(SQLSMALLINT odbc_data_type, SQLULEN column_size, SQLSMALLINT decimal_digits, SQLSMALLINT nullable, StringInfo sql_type);
+static void odbcGetOptions(Oid server_oid, List *add_options, odbcFdwOptions *extracted_options);
+static void odbcGetTableOptions(Oid foreigntableid, odbcFdwOptions *extracted_options);
+static void check_return(SQLRETURN ret, char *msg, SQLHANDLE handle, SQLSMALLINT type);
+static void odbcConnStr(StringInfoData *conn_str, odbcFdwOptions* options);
 
 Datum
 odbc_fdw_handler(PG_FUNCTION_ARGS)
@@ -236,6 +225,27 @@ copy_odbcFdwOptions(odbcFdwOptions* to, odbcFdwOptions* from)
 	}
 }
 
+/*
+ * Replace empty string by null pointer
+ */
+static void
+normalize_empty_string(char **str)
+{
+	if (*str && !**str)
+	{
+		*str = NULL;
+	}
+}
+
+/*
+ * Avoid NULL string: return original string, or empty string if NULL
+ */
+static char*
+empty_string_if_null(char *string)
+{
+	static char* empty_string = "";
+	return string == NULL ? empty_string : string;
+}
 
 static void
 extract_odbcFdwOptions(List *options_list, odbcFdwOptions *extracted_options)
@@ -347,6 +357,32 @@ extract_odbcFdwOptions(List *options_list, odbcFdwOptions *extracted_options)
 	normalize_empty_string(&(extracted_options->password));
 }
 
+
+/*
+ * Establish ODBC connection
+ */
+static void
+odbc_connection(odbcFdwOptions* options, SQLHENV *env, SQLHDBC *dbc)
+{
+	StringInfoData  conn_str;
+	SQLCHAR OutConnStr[1024];
+	SQLSMALLINT OutConnStrLen;
+	SQLRETURN ret;
+
+	odbcConnStr(&conn_str, options);
+
+	/* Allocate an environment handle */
+	SQLAllocHandle(SQL_HANDLE_ENV, SQL_NULL_HANDLE, env);
+	/* We want ODBC 3 support */
+	SQLSetEnvAttr(*env, SQL_ATTR_ODBC_VERSION, (void *) SQL_OV_ODBC3, 0);
+
+	/* Allocate a connection handle */
+	SQLAllocHandle(SQL_HANDLE_DBC, *env, dbc);
+	/* Connect to the DSN */
+	ret = SQLDriverConnect(*dbc, NULL, (SQLCHAR *) conn_str.data, SQL_NTS,
+	                       OutConnStr, 1024, &OutConnStrLen, SQL_DRIVER_COMPLETE);
+	check_return(ret, "Connecting to driver", dbc, SQL_HANDLE_DBC);
+}
 
 /*
  * Validate function
@@ -619,8 +655,6 @@ sql_data_type(
 	};
 }
 
-
-
 /*
  * Fetch the options for a server and options list
  */
@@ -810,10 +844,7 @@ odbcGetTableSize(odbcFdwOptions* options, unsigned int *size)
 	SQLHSTMT stmt;
 	SQLRETURN ret;
 
-	StringInfoData  conn_str;
 	StringInfoData  sql_str;
-	SQLCHAR OutConnStr[1024];
-	SQLSMALLINT OutConnStrLen;
 
 	SQLUBIGINT table_size;
 	SQLLEN indicator;
@@ -829,28 +860,13 @@ odbcGetTableSize(odbcFdwOptions* options, unsigned int *size)
 		schema_name = options->database;
 	}
 
-	/* Construct connection string */
-	odbcConnStr(&conn_str, options);
-
-	/* Allocate an environment handle */
-	SQLAllocHandle(SQL_HANDLE_ENV, SQL_NULL_HANDLE, &env);
-	/* We want ODBC 3 support */
-	SQLSetEnvAttr(env, SQL_ATTR_ODBC_VERSION, (void *) SQL_OV_ODBC3, 0);
-	/* Allocate a connection handle */
-	SQLAllocHandle(SQL_HANDLE_DBC, env, &dbc);
-
-	/* Connect to the DSN */
-	ret = SQLDriverConnect(dbc, NULL, (SQLCHAR *) conn_str.data, SQL_NTS,
-                           OutConnStr, 1024, &OutConnStrLen, SQL_DRIVER_COMPLETE);
-	check_return(ret, "Connecting to driver", dbc, SQL_HANDLE_DBC);
+	odbc_connection(options, &env, &dbc);
 
 	/* Allocate a statement handle */
 	SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
 
 	if (options->sql_count == NULL)
 	{
-		/* TODO: if use sql_query if present and wrap it with SELECT COUNT(*) */
-
 		/* Get quote char */
 		getQuoteChar(dbc, &quote_char);
 
@@ -858,10 +874,26 @@ odbcGetTableSize(odbcFdwOptions* options, unsigned int *size)
 		getNameQualifierChar(dbc, &name_qualifier_char);
 
 		initStringInfo(&sql_str);
-		appendStringInfo(&sql_str, "SELECT COUNT(*) FROM %s%s%s%s%s%s%s",
-		                 quote_char.data, schema_name, quote_char.data,
-		                 name_qualifier_char.data,
-		                 quote_char.data, options->table, quote_char.data);
+		if (options->sql_query == NULL)
+		{
+			if (schema_name == NULL)
+			{
+				appendStringInfo(&sql_str, "SELECT COUNT(*) FROM %s%s%s%s%s%s%s",
+				                 quote_char.data, schema_name, quote_char.data,
+				                 name_qualifier_char.data,
+				                 quote_char.data, options->table, quote_char.data);
+
+			}
+			else
+			{
+				appendStringInfo(&sql_str, "SELECT COUNT(*) FROM %s%s%s",
+				                 quote_char.data, options->table, quote_char.data);
+			}
+		}
+		else
+		{
+			appendStringInfo(&sql_str, "SELECT COUNT(*) FROM (%s) AS _odbc_fwd_count_wrapped", options->sql_query);
+		}
 	}
 	else
 	{
@@ -869,6 +901,9 @@ odbcGetTableSize(odbcFdwOptions* options, unsigned int *size)
 		appendStringInfo(&sql_str, "%s", options->sql_count);
 	}
 
+    #ifdef DEBUG
+		elog(DEBUG1, "Count query: %s", sql_str.data);
+	#endif
 
 	ret = SQLExecDirect(stmt, (SQLCHAR *) sql_str.data, SQL_NTS);
     check_return(ret, "Executing ODBC query", stmt, SQL_HANDLE_STMT);
@@ -880,6 +915,9 @@ odbcGetTableSize(odbcFdwOptions* options, unsigned int *size)
 		if (SQL_SUCCEEDED(ret))
 		{
 			*size = (unsigned int) table_size;
+			#ifdef DEBUG
+				elog(DEBUG1, "Count query result: %lu", table_size);
+			#endif
 		}
 	}
 	else
@@ -1131,8 +1169,6 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 	SQLSMALLINT result_columns;
 	SQLHSTMT stmt;
 	SQLRETURN ret;
-	SQLCHAR OutConnStr[1024];
-	SQLSMALLINT OutConnStrLen;
 
 #ifdef DEBUG
 	char dsn[256];
@@ -1143,8 +1179,6 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 #endif
 
 	odbcFdwOptions options;
-
-	StringInfoData conn_str;
 
 	Relation rel;
 	int num_of_columns;
@@ -1177,19 +1211,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 		schema_name = options.database;
 	}
 
-    odbcConnStr(&conn_str, &options);
-
-	/* Allocate an environment handle */
-	SQLAllocHandle(SQL_HANDLE_ENV, SQL_NULL_HANDLE, &env);
-	/* We want ODBC 3 support */
-	SQLSetEnvAttr(env, SQL_ATTR_ODBC_VERSION, (void *) SQL_OV_ODBC3, 0);
-
-	/* Allocate a connection handle */
-	SQLAllocHandle(SQL_HANDLE_DBC, env, &dbc);
-	/* Connect to the DSN */
-	ret = SQLDriverConnect(dbc, NULL, (SQLCHAR *) conn_str.data, SQL_NTS,
-	                       OutConnStr, 1024, &OutConnStrLen, SQL_DRIVER_COMPLETE);
-	check_return(ret, "Connecting to driver", dbc, SQL_HANDLE_DBC);
+    odbc_connection(&options, &env, &dbc);
 
 	/* Getting the Quote char */
 	SQLGetInfo(dbc,
@@ -1260,29 +1282,38 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 
 	/* Construct the SQL statement used for remote querying */
 	initStringInfo(&sql);
-	if (pushdown)
+	if (options.sql_query)
 	{
-		/* TODO: this should use quote_char, etc. as below */
-		appendStringInfo(&sql, "SELECT %s FROM `%s`.`%s` WHERE `%s` = '%s'",
-		                 col_str.data, options.database, options.table, qual_key, qual_value);
+		/* Use custom query if it's available */
+		appendStringInfo(&sql, "%s", options.sql_query);
 	}
 	else
 	{
-		/* Use custom query if it's available */
-		if (options.sql_query)
+		/* Get options.table */
+		if (schema_name == NULL)
 		{
-			appendStringInfo(&sql, "%s", options.sql_query);
+			appendStringInfo(&sql, "SELECT %s FROM %s%s%s", col_str.data,
+							 (char *) quote_char, options.table, (char *) quote_char);
 		}
 		else
 		{
 			appendStringInfo(&sql, "SELECT %s FROM %s%s%s%s%s%s%s", col_str.data,
-			                 (char *) quote_char, schema_name, (char *) quote_char,
-			                 (char *) name_qualifier_char, (char *) quote_char, options.table, (char *) quote_char);
+							 (char *) quote_char, schema_name, (char *) quote_char,
+							 (char *) name_qualifier_char, (char *) quote_char, options.table, (char *) quote_char);
+		}
+		if (pushdown)
+		{
+			appendStringInfo(&sql, " WHERE %s%s%s = '%s'",
+			                 (char *) quote_char, qual_key, (char *) quote_char, qual_value);
 		}
 	}
 
 	/* Allocate a statement handle */
 	SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
+
+    #ifdef DEBUG
+		elog(DEBUG1, "Executing query: %s", sql.data);
+	#endif
 
 	/* Retrieve a list of rows */
 	ret = SQLExecDirect(stmt, (SQLCHAR *) sql.data, SQL_NTS);
@@ -1330,10 +1361,6 @@ odbcIterateForeignScan(ForeignScanState *node)
 	#endif
 
 	ret = SQLFetch(stmt);
-	/* Note that we shouldn't get SQL_NO_DATA here, because PG has previously
-	   obtained the number of rows in the results and only calls this method
-	   that many times */
-    check_return(ret, "Fetching ODBC data", stmt, SQL_HANDLE_STMT);
 
 	SQLNumResultCols(stmt, &columns);
 
@@ -1561,13 +1588,11 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 	ListCell *tables_cell;
 	ListCell *table_columns_cell;
 
-	StringInfoData  conn_str;
 	SQLHENV env;
 	SQLHDBC dbc;
 	SQLHSTMT query_stmt;
+	SQLHSTMT columns_stmt;
 	SQLRETURN ret;
-	SQLCHAR OutConnStr[1024];
-	SQLSMALLINT OutConnStrLen;
 	SQLSMALLINT result_columns;
 	StringInfoData col_str;
 	SQLCHAR *ColumnName;
@@ -1580,7 +1605,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 	StringInfoData sql_type;
 	StringInfoData name_qualifier_char;
 	StringInfoData quote_char;
-
+	SQLLEN indicator;
 
 	#ifdef DEBUG
 		elog(DEBUG1, "odbcImportForeignSchema");
@@ -1597,19 +1622,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 			elog(ERROR, "Must provide 'table' option to name the foreign table");
 		}
 
-		odbcConnStr(&conn_str, &options);
-
-		/* Allocate an environment handle */
-		SQLAllocHandle(SQL_HANDLE_ENV, SQL_NULL_HANDLE, &env);
-		/* We want ODBC 3 support */
-		SQLSetEnvAttr(env, SQL_ATTR_ODBC_VERSION, (void *) SQL_OV_ODBC3, 0);
-
-		/* Allocate a connection handle */
-		SQLAllocHandle(SQL_HANDLE_DBC, env, &dbc);
-		/* Connect to the DSN */
-		ret = SQLDriverConnect(dbc, NULL, (SQLCHAR *) conn_str.data, SQL_NTS,
-		                       OutConnStr, 1024, &OutConnStrLen, SQL_DRIVER_COMPLETE);
-		check_return(ret, "Connecting to driver", dbc, SQL_HANDLE_DBC);
+		odbc_connection(&options, &env, &dbc);
 
 		/* Get quote char */
 		getQuoteChar(dbc, &quote_char);
@@ -1655,11 +1668,12 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 	}
 	else
 	{
-		// TODO: if svr_table, should it take precedence over LIMIT_TO/EXCEPT?
-		//      should it be merged with LIMIT_TO ?
-
 		/* Reflect one or more foreign tables */
-		if (stmt->list_type == FDW_IMPORT_SCHEMA_ALL || stmt->list_type == FDW_IMPORT_SCHEMA_EXCEPT)
+		if (options.table)
+		{
+			tables = lappend(tables, (void*)options.table);
+		}
+		else if (stmt->list_type == FDW_IMPORT_SCHEMA_ALL || stmt->list_type == FDW_IMPORT_SCHEMA_EXCEPT)
 		{
 			// TODO: Use SQLTables to obtain remote table names -> tables
 		    if (stmt->list_type == FDW_IMPORT_SCHEMA_EXCEPT)
@@ -1677,7 +1691,57 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 		}
         foreach(tables_cell, tables)
 		{
-			/* TODO: for each table, SQLColumns to obtain its columns */
+			char *table_name = (char*)lfirst(tables_cell);
+
+			const char* schema_name = options.schema;
+
+			if (schema_name == NULL)
+			{
+				/* TODO: this is just a MySQL convenience; should remove it? */
+				schema_name = options.database;
+			}
+
+			odbc_connection(&options, &env, &dbc);
+
+			/* Allocate a statement handle */
+			SQLAllocHandle(SQL_HANDLE_STMT, dbc, &columns_stmt);
+
+			ret = SQLColumns(
+				 columns_stmt,
+				 NULL, 0,
+				 (SQLCHAR*)schema_name, strlen(schema_name),
+				 (SQLCHAR*)table_name,  strlen(table_name),
+				 NULL, 0
+			);
+			check_return(ret, "Obtaining ODBC columns", columns_stmt, SQL_HANDLE_STMT);
+
+            i = 0;
+			initStringInfo(&col_str);
+			ColumnName = (SQLCHAR *) palloc(sizeof(SQLCHAR) * 255);
+			while (SQL_SUCCESS == ret)
+			{
+				ret = SQLFetch(columns_stmt);
+				if (SQL_SUCCESS == ret)
+				{
+					if (++i > 1)
+					{
+						appendStringInfo(&col_str, ", ");
+					}
+					ret = SQLGetData(columns_stmt, 4, SQL_C_CHAR, ColumnName, 255, &indicator);
+					check_return(ret, "Reading column name", columns_stmt, SQL_HANDLE_STMT);
+					ret = SQLGetData(columns_stmt, 5, SQL_C_SSHORT, &DataType, 255, &indicator);
+					check_return(ret, "Reading column type", columns_stmt, SQL_HANDLE_STMT);
+					ret = SQLGetData(columns_stmt, 7, SQL_C_SLONG, &ColumnSize, 0, &indicator);
+					check_return(ret, "Reading column size", columns_stmt, SQL_HANDLE_STMT);
+					ret = SQLGetData(columns_stmt, 9, SQL_C_SSHORT, &DecimalDigits, 0, &indicator);
+					check_return(ret, "Reading column decimals", columns_stmt, SQL_HANDLE_STMT);
+					ret = SQLGetData(columns_stmt, 11, SQL_C_SSHORT, &Nullable, 0, &indicator);
+					check_return(ret, "Reading column nullable", columns_stmt, SQL_HANDLE_STMT);
+					sql_data_type(DataType, ColumnSize, DecimalDigits, Nullable, &sql_type);
+					appendStringInfo(&col_str, "\"%s\" %s", ColumnName, (char *) sql_type.data);
+				}
+			}
+			table_columns = lappend(table_columns, (void*)col_str.data);
 		}
 	}
 

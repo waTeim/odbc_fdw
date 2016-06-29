@@ -668,7 +668,7 @@ void static extract_error(char *fn,
 
 	return;
 
-	elog(NOTICE,
+	elog(ERROR,
 		 "\n"
 		 "The driver reported the following diagnostics whilst running "
 		 "%s\n\n",
@@ -679,9 +679,7 @@ void static extract_error(char *fn,
 		ret = SQLGetDiagRec(type, handle, ++i, state, &native, text,
 		                    sizeof(text), &len );
 		if (SQL_SUCCEEDED(ret))
-			elog(NOTICE, "> %s:%ld:%ld:%s\n", state, (long int) i, (long int) native, text);
-		else
-			elog(NOTICE, "> METAERROR %d\n", ret);
+			elog(ERROR, "> %s:%ld:%ld:%s\n", state, (long int) i, (long int) native, text);
 	}
 	while( ret == SQL_SUCCESS );
 }
@@ -1386,7 +1384,6 @@ odbcIterateForeignScan(ForeignScanState *node)
 			               &DecimalDigitsPtr,
 			               &NullablePtr);
 
-            elog(NOTICE,"col: %s t: %d", ColumnName, DataTypePtr);
 			sql_data_type(DataTypePtr, ColumnSizePtr, DecimalDigitsPtr, NullablePtr, &sql_type);
 
 			/* Get the position of the column in the FDW table */
@@ -1489,7 +1486,7 @@ odbcIterateForeignScan(ForeignScanState *node)
 	else
 	{
 		// SQL_NO_DATA
-		elog(NOTICE, "ERROR %d", ret);
+		elog(ERROR, "ERROR %d", ret);
 		extract_error("SQLGetTypeInfo", stmt, SQL_HANDLE_STMT);
 	}
 
@@ -1642,7 +1639,6 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 		/* Retrieve a list of rows */
 		SQLExecDirect(query_stmt, (SQLCHAR *) options.sql_query, SQL_NTS);
 		SQLNumResultCols(query_stmt, &result_columns);
-		elog(NOTICE,"IFS query: %s -> cols: %d", options.sql_query, result_columns);
 
 		initStringInfo(&col_str);
 		ColumnName = (SQLCHAR *) palloc(sizeof(SQLCHAR) * 255);
@@ -1658,8 +1654,6 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 			               &ColumnSize,
 			               &DecimalDigits,
 			               &Nullable);
-
-			elog(NOTICE,"IFS col: %s t: %d", ColumnName, DataType);
 
 			sql_data_type(DataType, ColumnSize, DecimalDigits, Nullable, &sql_type);
 			if (i > 1)
@@ -1692,7 +1686,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 		}
 		else
 		{
-			elog(NOTICE,"UNKNOWN");
+			elog(ERROR,"UNKNOWN");
 		}
         foreach(tables_cell, tables)
 		{

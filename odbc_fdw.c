@@ -437,9 +437,9 @@ sql_data_type(
  * Fetch the options for a server and options list
  */
 static void
-odbcGetOptions0(Oid server_oid, List *add_options, char **svr_dsn, char **svr_driver, char **svr_host, char **svr_port,
-			   char **svr_database, char **svr_schema, char ** svr_table, char ** sql_query,
-			   char **sql_count, char **username, char **password, List **mapping_list)
+odbcGetOptions(Oid server_oid, List *add_options, char **svr_dsn, char **svr_driver, char **svr_host, char **svr_port,
+			  char **svr_database, char **svr_schema, char ** svr_table, char ** sql_query,
+			  char **sql_count, char **username, char **password, List **mapping_list)
 {
 	ForeignServer   *server;
 	UserMapping     *mapping;
@@ -447,7 +447,7 @@ odbcGetOptions0(Oid server_oid, List *add_options, char **svr_dsn, char **svr_dr
 	ListCell        *lc;
 
 	#ifdef DEBUG
-		elog(DEBUG1, "odbcGetOptions0");
+		elog(DEBUG1, "odbcGetOptions");
 	#endif
 
     server  = GetForeignServer(server_oid);
@@ -554,19 +554,19 @@ odbcGetOptions0(Oid server_oid, List *add_options, char **svr_dsn, char **svr_dr
  * Fetch the options for a odbc_fdw foreign table.
  */
 static void
-odbcGetOptions(Oid foreigntableid, char **svr_dsn, char **svr_driver, char **svr_host, char **svr_port,
-			   char **svr_database, char **svr_schema, char ** svr_table, char ** sql_query,
-			   char **sql_count, char **username, char **password, List **mapping_list)
+odbcGetTableOptions(Oid foreigntableid, char **svr_dsn, char **svr_driver, char **svr_host, char **svr_port,
+                    char **svr_database, char **svr_schema, char ** svr_table, char ** sql_query,
+                    char **sql_count, char **username, char **password, List **mapping_list)
 {
 	ForeignTable    *table;
 	ForeignServer   *server;
 
 	#ifdef DEBUG
-		elog(DEBUG1, "odbcGetOptions");
+		elog(DEBUG1, "odbcGetTableOptions");
 	#endif
 
 	table = GetForeignTable(foreigntableid);
-    odbcGetOptions0(table->serverid, table->options, svr_dsn, svr_driver, svr_host, svr_port, svr_database, svr_schema, svr_table, sql_query, sql_count, username, password, mapping_list);
+    odbcGetOptions(table->serverid, table->options, svr_dsn, svr_driver, svr_host, svr_port, svr_database, svr_schema, svr_table, sql_query, sql_count, username, password, mapping_list);
 }
 
 #ifdef DEBUG
@@ -945,9 +945,9 @@ static void odbcGetForeignRelSize(PlannerInfo *root, RelOptInfo *baserel, Oid fo
 	#endif
 
 	/* Fetch the foreign table options */
-	odbcGetOptions(foreigntableid, &svr_dsn, &svr_driver, &svr_host, &svr_port,
-	               &svr_database, &svr_schema, &svr_table, &sql_query,
-	               &sql_count, &username, &password, &col_mapping_list);
+	odbcGetTableOptions(foreigntableid, &svr_dsn, &svr_driver, &svr_host, &svr_port,
+	                    &svr_database, &svr_schema, &svr_table, &sql_query,
+	                    &sql_count, &username, &password, &col_mapping_list);
 
 	odbcGetTableSize(svr_dsn, svr_driver, svr_host, svr_port, svr_database, svr_schema, svr_table, username, password, sql_count, &table_size);
 
@@ -976,9 +976,9 @@ static void odbcEstimateCosts(PlannerInfo *root, RelOptInfo *baserel, Cost *star
 	#endif
 
 	/* Fetch the foreign table options */
-	odbcGetOptions(foreigntableid, &svr_dsn, &svr_driver, &svr_host, &svr_port,
-	               &svr_database, &svr_schema, &svr_table, &sql_query,
-	               &sql_count, &username, &password, &col_mapping_list);
+	odbcGetTableOptions(foreigntableid, &svr_dsn, &svr_driver, &svr_host, &svr_port,
+	                    &svr_database, &svr_schema, &svr_table, &sql_query,
+	                    &sql_count, &username, &password, &col_mapping_list);
 
 	odbcGetTableSize(svr_dsn, svr_driver, svr_host, svr_port, svr_database, svr_schema, svr_table, username, password, sql_count, &table_size);
 
@@ -1118,8 +1118,8 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 	#endif
 
 	/* Fetch the foreign table options */
-	odbcGetOptions(RelationGetRelid(node->ss.ss_currentRelation), &svr_dsn, &svr_driver, &svr_host, &svr_port, &svr_database, &svr_schema, &svr_table, &sql_query,
-	               &sql_count, &username, &password, &col_mapping_list);
+	odbcGetTableOptions(RelationGetRelid(node->ss.ss_currentRelation), &svr_dsn, &svr_driver, &svr_host, &svr_port, &svr_database, &svr_schema, &svr_table, &sql_query,
+	                    &sql_count, &username, &password, &col_mapping_list);
 
 	if (!schema_name || !*schema_name)
 	{
@@ -1587,9 +1587,9 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 		elog(DEBUG1, "odbcImportForeignSchema");
 	#endif
 
-	odbcGetOptions0(serverOid, stmt->options, &svr_dsn, &svr_driver, &svr_host, &svr_port,
-	               &svr_database, &svr_schema, &svr_table, &sql_query,
-	               &sql_count, &username, &password, &col_mapping_list);
+	odbcGetOptions(serverOid, stmt->options, &svr_dsn, &svr_driver, &svr_host, &svr_port,
+	              &svr_database, &svr_schema, &svr_table, &sql_query,
+	              &sql_count, &username, &password, &col_mapping_list);
 
 	if (sql_query)
 	{

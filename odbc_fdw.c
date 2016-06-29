@@ -141,6 +141,16 @@ normalize_empty_string(char **str)
 }
 
 /*
+ * Avoid NULL string: return original string, or empty string if NULL
+ */
+static char*
+empty_string_if_null(char *string)
+{
+	static char* empty_string = "";
+	return string == NULL ? empty_string : string;
+}
+
+/*
  * SQL functions
  */
 extern Datum odbc_fdw_handler(PG_FUNCTION_ARGS);
@@ -1705,9 +1715,9 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
         StringInfoData create_statement;
 		ListCell *option;
 		int first_option = TRUE;
-		// TODO: if prefix option given, prepend table_name with it
+		char *prefix = empty_string_if_null(options.prefix);
 		initStringInfo(&create_statement);
-		appendStringInfo(&create_statement, "CREATE FOREIGN TABLE \"%s\" (", (char *) table_name);
+		appendStringInfo(&create_statement, "CREATE FOREIGN TABLE \"%s%s\" (", prefix, (char *) table_name);
 		appendStringInfo(&create_statement, "%s", columns);
 		appendStringInfo(&create_statement, ") SERVER %s\n", stmt->server_name);
 		appendStringInfo(&create_statement, "OPTIONS (\n");

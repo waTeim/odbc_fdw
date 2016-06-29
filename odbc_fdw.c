@@ -664,36 +664,40 @@ odbcGetTableOptions(Oid foreigntableid, odbcFdwOptions *extracted_options)
     odbcGetOptions(table->serverid, table->options, extracted_options);
 }
 
-#ifdef DEBUG
-void static extract_error(char *fn,
-                          SQLHANDLE handle,
-                          SQLSMALLINT type)
+static void
+check_return(SQLRETURN ret, char *msg, SQLHANDLE handle, SQLSMALLINT type)
 {
-	SQLINTEGER   i = 0;
-	SQLINTEGER   native;
-	SQLCHAR  state[ 7 ];
-	SQLCHAR  text[256];
-	SQLSMALLINT  len;
-	SQLRETURN    ret;
-
-	return;
-
-	elog(ERROR,
-		 "\n"
-		 "The driver reported the following diagnostics whilst running "
-		 "%s\n\n",
-		 fn);
-
-	do
-	{
-		ret = SQLGetDiagRec(type, handle, ++i, state, &native, text,
-		                    sizeof(text), &len );
+	int err_code = ERRCODE_SYSTEM_ERROR;
+	#ifdef DEBUG
+		SQLINTEGER   i = 0;
+		SQLINTEGER   native;
+		SQLCHAR  state[ 7 ];
+		SQLCHAR  text[256];
+		SQLSMALLINT  len;
+		SQLRETURN    diag_ret;
 		if (SQL_SUCCEEDED(ret))
-			elog(ERROR, "> %s:%ld:%ld:%s\n", state, (long int) i, (long int) native, text);
+			elog(DEBUG1, "Successful result: %s", msg);
+	#endif
+
+	if (!SQL_SUCCEEDED(ret))
+	{
+		#ifdef DEBUG
+			elog(DEBUG1, "Error result (%d): %s", ret, msg);
+			if (handle)
+			{
+				do
+				{
+					diag_ret = SQLGetDiagRec(type, handle, ++i, state, &native, text,
+					                    sizeof(text), &len );
+					if (SQL_SUCCEEDED(diag_ret))
+						elog(DEBUG1, " %s:%ld:%ld:%s\n", state, (long int) i, (long int) native, text);
+				}
+				while( diag_ret == SQL_SUCCESS );
+			}
+		#endif
+		ereport(ERROR, (errcode(err_code), errmsg("%s", msg)));
 	}
-	while( ret == SQL_SUCCESS );
 }
-#endif
 
 /*
  * Get name qualifier char
@@ -838,15 +842,7 @@ odbcGetTableSize(odbcFdwOptions* options, unsigned int *size)
 	/* Connect to the DSN */
 	ret = SQLDriverConnect(dbc, NULL, (SQLCHAR *) conn_str.data, SQL_NTS,
                            OutConnStr, 1024, &OutConnStrLen, SQL_DRIVER_COMPLETE);
-
-	#ifdef DEBUG
-		if (SQL_SUCCEEDED(ret))
-			elog(DEBUG1, "Successfully connected to driver");
-		else
-		{
-			extract_error("SQLDriverConnect", dbc, SQL_HANDLE_DBC);
-		}
-	#endif
+	check_return(ret, "Connecting to driver", dbc, SQL_HANDLE_DBC);
 
 	/* Allocate a statement handle */
 	SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
@@ -875,6 +871,7 @@ odbcGetTableSize(odbcFdwOptions* options, unsigned int *size)
 
 
 	ret = SQLExecDirect(stmt, (SQLCHAR *) sql_str.data, SQL_NTS);
+    check_return(ret, "Executing ODBC query", stmt, SQL_HANDLE_STMT);
 	if (SQL_SUCCEEDED(ret))
 	{
 		SQLFetch(stmt);
@@ -1192,15 +1189,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 	/* Connect to the DSN */
 	ret = SQLDriverConnect(dbc, NULL, (SQLCHAR *) conn_str.data, SQL_NTS,
 	                       OutConnStr, 1024, &OutConnStrLen, SQL_DRIVER_COMPLETE);
-
-	#ifdef DEBUG
-		if (SQL_SUCCEEDED(ret))
-			elog(DEBUG1, "Successfully connected to driver");
-		else
-		{
-			extract_error("SQLDriverConnect", dbc, SQL_HANDLE_DBC);
-		}
-	#endif
+	check_return(ret, "Connecting to driver", dbc, SQL_HANDLE_DBC);
 
 	/* Getting the Quote char */
 	SQLGetInfo(dbc,
@@ -1296,7 +1285,8 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 	SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
 
 	/* Retrieve a list of rows */
-	SQLExecDirect(stmt, (SQLCHAR *) sql.data, SQL_NTS);
+	ret = SQLExecDirect(stmt, (SQLCHAR *) sql.data, SQL_NTS);
+    check_return(ret, "Executing ODBC query", stmt, SQL_HANDLE_STMT);
 	SQLNumResultCols(stmt, &result_columns);
 
 	festate = (odbcFdwExecutionState *) palloc(sizeof(odbcFdwExecutionState));
@@ -1340,6 +1330,10 @@ odbcIterateForeignScan(ForeignScanState *node)
 	#endif
 
 	ret = SQLFetch(stmt);
+	/* Note that we shouldn't get SQL_NO_DATA here, because PG has previously
+	   obtained the number of rows in the results and only calls this method
+	   that many times */
+    check_return(ret, "Fetching ODBC data", stmt, SQL_HANDLE_STMT);
 
 	SQLNumResultCols(stmt, &columns);
 
@@ -1368,10 +1362,6 @@ odbcIterateForeignScan(ForeignScanState *node)
 		SQLCHAR *buffer;
 		BufferLength = 1024;
 		buffer = (SQLCHAR*)malloc( BufferLength*sizeof(char) );
-
-
-
-
 
 		/* Allocate memory for the masks in a memory context that
 		   persists between IterateForeignScan calls */
@@ -1493,13 +1483,6 @@ odbcIterateForeignScan(ForeignScanState *node)
 		ExecStoreTuple(tuple, slot, InvalidBuffer, false);
 		pfree(values);
 	}
-	else
-	{
-		// SQL_NO_DATA
-		elog(ERROR, "ERROR %d", ret);
-		extract_error("SQLGetTypeInfo", stmt, SQL_HANDLE_STMT);
-	}
-
 
 	return slot;
 }
@@ -1626,15 +1609,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 		/* Connect to the DSN */
 		ret = SQLDriverConnect(dbc, NULL, (SQLCHAR *) conn_str.data, SQL_NTS,
 		                       OutConnStr, 1024, &OutConnStrLen, SQL_DRIVER_COMPLETE);
-
-		#ifdef DEBUG
-			if (SQL_SUCCEEDED(ret))
-				elog(DEBUG1, "Successfully connected to driver");
-			else
-			{
-				extract_error("SQLDriverConnect", dbc, SQL_HANDLE_DBC);
-			}
-		#endif
+		check_return(ret, "Connecting to driver", dbc, SQL_HANDLE_DBC);
 
 		/* Get quote char */
 		getQuoteChar(dbc, &quote_char);
@@ -1647,7 +1622,9 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 		SQLAllocHandle(SQL_HANDLE_STMT, dbc, &query_stmt);
 
 		/* Retrieve a list of rows */
-		SQLExecDirect(query_stmt, (SQLCHAR *) options.sql_query, SQL_NTS);
+		ret = SQLExecDirect(query_stmt, (SQLCHAR *) options.sql_query, SQL_NTS);
+		check_return(ret, "Executing ODBC query", query_stmt, SQL_HANDLE_STMT);
+
 		SQLNumResultCols(query_stmt, &result_columns);
 
 		initStringInfo(&col_str);

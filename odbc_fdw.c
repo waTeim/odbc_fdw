@@ -197,19 +197,7 @@ copy_odbcFdwOptions(odbcFdwOptions* to, odbcFdwOptions* from)
 {
 	if (to && from)
 	{
-		to->dsn          = from->dsn;
-		to->driver       = from->driver;
-		to->host         = from->host;
-		to->port         = from->port;
-		to->database     = from->database;
-		to->username     = from->username;
-		to->password     = from->password;
-		to->schema       = from->schema;
-		to->table        = from->table;
-		to->prefix       = from->prefix;
-		to->sql_query    = from->sql_query;
-		to->sql_count    = from->sql_count;
-		to->mapping_list = from->mapping_list;
+		*to = *from;
 	}
 }
 

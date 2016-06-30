@@ -189,19 +189,7 @@ odbc_fdw_handler(PG_FUNCTION_ARGS)
 void
 init_odbcFdwOptions(odbcFdwOptions* options)
 {
-	options->dsn          = NULL;
-	options->driver       = NULL;
-	options->host         = NULL;
-	options->port         = NULL;
-	options->database     = NULL;
-	options->username     = NULL;
-	options->password     = NULL;
-	options->schema       = NULL;
-	options->table        = NULL;
-	options->prefix       = NULL;
-	options->sql_query    = NULL;
-	options->sql_count    = NULL;
-	options->mapping_list = NIL;
+	memset(options, 0, sizeof(odbcFdwOptions));
 }
 
 void

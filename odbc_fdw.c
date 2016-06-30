@@ -333,6 +333,19 @@ extract_odbcFdwOptions(List *options_list, odbcFdwOptions *extracted_options)
 	normalize_empty_string(&(extracted_options->password));
 }
 
+/*
+ * Get the schema name from the options
+ */
+char* get_schema_name(odbcFdwOptions *options)
+{
+	char* schema_name = options->schema;
+	if (schema_name == NULL)
+	{
+		/* TODO: this is just a MySQL convenience; should remove it? */
+		schema_name = options->database;
+	}
+	return schema_name;
+}
 
 /*
  * Establish ODBC connection
@@ -828,13 +841,9 @@ odbcGetTableSize(odbcFdwOptions* options, unsigned int *size)
 	StringInfoData name_qualifier_char;
 	StringInfoData quote_char;
 
-	const char* schema_name = options->schema;
+	const char* schema_name;
 
-	if (schema_name == NULL)
-	{
-		/* TODO: this is just a MySQL convenience; should remove it? */
-		schema_name = options->database;
-	}
+	schema_name = get_schema_name(options);
 
 	odbc_connection(options, &env, &dbc);
 
@@ -854,15 +863,14 @@ odbcGetTableSize(odbcFdwOptions* options, unsigned int *size)
 		{
 			if (schema_name == NULL)
 			{
-				appendStringInfo(&sql_str, "SELECT COUNT(*) FROM %s%s%s%s%s%s%s",
-				                 quote_char.data, schema_name, quote_char.data,
-				                 name_qualifier_char.data,
+				appendStringInfo(&sql_str, "SELECT COUNT(*) FROM %s%s%s",
 				                 quote_char.data, options->table, quote_char.data);
-
 			}
 			else
 			{
-				appendStringInfo(&sql_str, "SELECT COUNT(*) FROM %s%s%s",
+				appendStringInfo(&sql_str, "SELECT COUNT(*) FROM %s%s%s%s%s%s%s",
+				                 quote_char.data, schema_name, quote_char.data,
+				                 name_qualifier_char.data,
 				                 quote_char.data, options->table, quote_char.data);
 			}
 		}
@@ -1164,8 +1172,8 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 	ListCell *col_mapping;
 	StringInfoData sql;
 	StringInfoData col_str;
-	SQLCHAR quote_char[2];
-	SQLCHAR name_qualifier_char[2];
+	StringInfoData name_qualifier_char;
+	StringInfoData quote_char;
 
 	char *qual_key         = NULL;
 	char *qual_value       = NULL;
@@ -1180,29 +1188,15 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 	/* Fetch the foreign table options */
 	odbcGetTableOptions(RelationGetRelid(node->ss.ss_currentRelation), &options);
 
-	schema_name = options.schema;
-
-	if (schema_name == NULL)
-	{
-		/* TODO: this is just a MySQL convenience; should remove it? */
-		schema_name = options.database;
-	}
+	schema_name = get_schema_name(&options);
 
     odbc_connection(&options, &env, &dbc);
 
-	/* Getting the Quote char */
-	SQLGetInfo(dbc,
-	           SQL_IDENTIFIER_QUOTE_CHAR,
-	           (SQLPOINTER)&quote_char,
-	           2,
-	           NULL);
+	/* Get quote char */
+	getQuoteChar(dbc, &quote_char);
 
-	/* Getting the Qualifier name separator */
-	SQLGetInfo(dbc,
-	           SQL_QUALIFIER_NAME_SEPARATOR,
-	           (SQLPOINTER)&name_qualifier_char,
-	           2,
-	           NULL);
+	/* Get name qualifier char */
+	getNameQualifierChar(dbc, &name_qualifier_char);
 
 	/* Fetch the table column info */
 	rel = heap_open(RelationGetRelid(node->ss.ss_currentRelation), AccessShareLock);
@@ -1238,7 +1232,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 			columns[i] = mapping;
 		else
 			columns[i] = col;
-		appendStringInfo(&col_str, i == 0 ? "%s%s%s" : ",%s%s%s", (char *) quote_char, columns[i].data, (char *) quote_char);
+		appendStringInfo(&col_str, i == 0 ? "%s%s%s" : ",%s%s%s", (char *) quote_char.data, columns[i].data, (char *) quote_char.data);
 	}
 	heap_close(rel, NoLock);
 
@@ -1270,18 +1264,19 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 		if (schema_name == NULL)
 		{
 			appendStringInfo(&sql, "SELECT %s FROM %s%s%s", col_str.data,
-							 (char *) quote_char, options.table, (char *) quote_char);
+							 (char *) quote_char.data, options.table, (char *) quote_char.data);
 		}
 		else
 		{
 			appendStringInfo(&sql, "SELECT %s FROM %s%s%s%s%s%s%s", col_str.data,
-							 (char *) quote_char, schema_name, (char *) quote_char,
-							 (char *) name_qualifier_char, (char *) quote_char, options.table, (char *) quote_char);
+							 (char *) quote_char.data, schema_name, (char *) quote_char.data,
+							 (char *) name_qualifier_char.data,
+							 (char *) quote_char.data, options.table, (char *) quote_char.data);
 		}
 		if (pushdown)
 		{
 			appendStringInfo(&sql, " WHERE %s%s%s = '%s'",
-			                 (char *) quote_char, qual_key, (char *) quote_char, qual_value);
+			                 (char *) quote_char.data, qual_key, (char *) quote_char.data, qual_value);
 		}
 	}
 
@@ -1554,9 +1549,20 @@ odbcReScanForeignScan(ForeignScanState *node)
 }
 
 
+static void
+appendOption(StringInfo str, int first, const char* option_name, const char* option_value)
+{
+	if (!first)
+	{
+		appendStringInfo(str, ",\n");
+	}
+	appendStringInfo(str, "%s '%s'", option_name, option_value);
+}
+
 List *
 odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 {
+	/* TODO: review memory management in this function; any leaks? */
 	odbcFdwOptions options;
 
 	List* create_statements = NIL;
@@ -1569,10 +1575,12 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 	SQLHDBC dbc;
 	SQLHSTMT query_stmt;
 	SQLHSTMT columns_stmt;
+	SQLHSTMT tables_stmt;
 	SQLRETURN ret;
 	SQLSMALLINT result_columns;
 	StringInfoData col_str;
 	SQLCHAR *ColumnName;
+	SQLCHAR *TableName;
 	SQLSMALLINT NameLength;
 	SQLSMALLINT DataType;
 	SQLULEN     ColumnSize;
@@ -1580,15 +1588,16 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 	SQLSMALLINT Nullable;
 	int i;
 	StringInfoData sql_type;
-	StringInfoData name_qualifier_char;
-	StringInfoData quote_char;
 	SQLLEN indicator;
+	const char* schema_name;
 
 	#ifdef DEBUG
 		elog(DEBUG1, "odbcImportForeignSchema");
 	#endif
 
 	odbcGetOptions(serverOid, stmt->options, &options);
+
+	schema_name = get_schema_name(&options);
 
 	if (options.sql_query)
 	{
@@ -1600,13 +1609,6 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 		}
 
 		odbc_connection(&options, &env, &dbc);
-
-		/* Get quote char */
-		getQuoteChar(dbc, &quote_char);
-
-		/* Get name qualifier char */
-		getNameQualifierChar(dbc, &name_qualifier_char);
-
 
 		/* Allocate a statement handle */
 		SQLAllocHandle(SQL_HANDLE_STMT, dbc, &query_stmt);
@@ -1639,6 +1641,8 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 			}
 			appendStringInfo(&col_str, "\"%s\" %s", ColumnName, (char *) sql_type.data);
 		}
+		SQLCloseCursor(query_stmt);
+		SQLFreeHandle(SQL_HANDLE_STMT, query_stmt);
 
 		tables        = lappend(tables, (void*)options.table);
 		table_columns = lappend(table_columns, (void*)col_str.data);
@@ -1652,11 +1656,85 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 		}
 		else if (stmt->list_type == FDW_IMPORT_SCHEMA_ALL || stmt->list_type == FDW_IMPORT_SCHEMA_EXCEPT)
 		{
-			// TODO: Use SQLTables to obtain remote table names -> tables
-		    if (stmt->list_type == FDW_IMPORT_SCHEMA_EXCEPT)
+			/* Will obtain the foreign tables with SQLTables() */
+
+			odbc_connection(&options, &env, &dbc);
+
+			/* Allocate a statement handle */
+			SQLAllocHandle(SQL_HANDLE_STMT, dbc, &tables_stmt);
+
+			ret = SQLTables(
+				 tables_stmt,
+				 NULL, 0, /* Catalog: (SQLCHAR*)SQL_ALL_CATALOGS, SQL_NTS would include also tables from internal catalogs */
+				 NULL, 0, /* Schema: we avoid filtering by schema here to avoid problems with some drivers */
+				 NULL, 0, /* Table */
+				 (SQLCHAR*)"TABLE", SQL_NTS /* Type of table (we're not interested in views, temporary tables, etc.) */
+			);
+			check_return(ret, "Obtaining ODBC tables", tables_stmt, SQL_HANDLE_STMT);
+
+			initStringInfo(&col_str);
+			SQLCHAR *table_catalog = (SQLCHAR *) palloc(sizeof(SQLCHAR) * 255);
+			SQLCHAR *table_schema = (SQLCHAR *) palloc(sizeof(SQLCHAR) * 255);
+			while (SQL_SUCCESS == ret)
 			{
-				// TODO: remove tables in stmt->table_list from tables
+				ret = SQLFetch(tables_stmt);
+				if (SQL_SUCCESS == ret)
+				{
+					int excluded = FALSE;
+					TableName = (SQLCHAR *) palloc(sizeof(SQLCHAR) * 255);
+					ret = SQLGetData(tables_stmt, 3, SQL_C_CHAR, TableName, 255, &indicator);
+					check_return(ret, "Reading table name", tables_stmt, SQL_HANDLE_STMT);
+
+					/* Since we're not filtering the SQLTables call by schema
+					   we must exclude here tables that belong to other schemas.
+					   For some ODBC drivers tables may not be organized into
+					   schemas and the schema of the table will be blank.
+					   So we only reject tables for which the schema is not
+					   blank and different from the desired schema:
+					 */
+					ret = SQLGetData(tables_stmt, 2, SQL_C_CHAR, table_schema, 255, &indicator);
+ 					if (table_schema[0] != 0 && strcmp(table_schema, schema_name) )
+ 					{
+ 						excluded = TRUE;
+ 					}
+
+					/* Since we haven't specified SQL_ALL_CATALOGS in the
+					   call to SQLTables we shouldn't get tables from special
+					   catalogs and only from the regular catalog of the database
+					   (named as the database or blank, depending on the driver)
+					   but to be sure we'll reject tables from catalogs with
+					   other names:
+					 */
+					ret = SQLGetData(tables_stmt, 1, SQL_C_CHAR, table_catalog, 255, &indicator);
+					if (table_catalog[0] != 0 && strcmp(table_catalog, schema_name))
+					{
+						if (options.database == NULL || strcmp(table_catalog, options.database))
+						{
+							excluded = TRUE;
+						}
+					}
+
+					/* And now we'll handle tables excluded by an EXCEPT clause */
+					if (!excluded && stmt->list_type == FDW_IMPORT_SCHEMA_EXCEPT)
+					{
+						foreach(tables_cell,  stmt->table_list)
+						{
+							char *table_name = (char*)lfirst(tables_cell);
+							if (strcmp(TableName, table_name) == 0)
+							{
+								excluded = TRUE;
+							}
+						}
+					}
+
+					if (!excluded)
+					{
+						tables = lappend(tables, (void*)TableName);
+					}
+				}
 			}
+			SQLCloseCursor(tables_stmt);
+			SQLFreeHandle(SQL_HANDLE_STMT, tables_stmt);
 		}
 		else if (stmt->list_type == FDW_IMPORT_SCHEMA_LIMIT_TO)
 		{
@@ -1664,19 +1742,11 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 		}
 		else
 		{
-			elog(ERROR,"UNKNOWN");
+			elog(ERROR,"Unknown list type in IMPORT FOREIGN SCHEMA");
 		}
         foreach(tables_cell, tables)
 		{
 			char *table_name = (char*)lfirst(tables_cell);
-
-			const char* schema_name = options.schema;
-
-			if (schema_name == NULL)
-			{
-				/* TODO: this is just a MySQL convenience; should remove it? */
-				schema_name = options.database;
-			}
 
 			odbc_connection(&options, &env, &dbc);
 
@@ -1686,8 +1756,8 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 			ret = SQLColumns(
 				 columns_stmt,
 				 NULL, 0,
-				 (SQLCHAR*)schema_name, strlen(schema_name),
-				 (SQLCHAR*)table_name,  strlen(table_name),
+				 (SQLCHAR*)schema_name, SQL_NTS,
+				 (SQLCHAR*)table_name,  SQL_NTS,
 				 NULL, 0
 			);
 			check_return(ret, "Obtaining ODBC columns", columns_stmt, SQL_HANDLE_STMT);
@@ -1705,19 +1775,21 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 						appendStringInfo(&col_str, ", ");
 					}
 					ret = SQLGetData(columns_stmt, 4, SQL_C_CHAR, ColumnName, 255, &indicator);
-					check_return(ret, "Reading column name", columns_stmt, SQL_HANDLE_STMT);
+					// check_return(ret, "Reading column name", columns_stmt, SQL_HANDLE_STMT);
 					ret = SQLGetData(columns_stmt, 5, SQL_C_SSHORT, &DataType, 255, &indicator);
-					check_return(ret, "Reading column type", columns_stmt, SQL_HANDLE_STMT);
+					// check_return(ret, "Reading column type", columns_stmt, SQL_HANDLE_STMT);
 					ret = SQLGetData(columns_stmt, 7, SQL_C_SLONG, &ColumnSize, 0, &indicator);
-					check_return(ret, "Reading column size", columns_stmt, SQL_HANDLE_STMT);
+					// check_return(ret, "Reading column size", columns_stmt, SQL_HANDLE_STMT);
 					ret = SQLGetData(columns_stmt, 9, SQL_C_SSHORT, &DecimalDigits, 0, &indicator);
-					check_return(ret, "Reading column decimals", columns_stmt, SQL_HANDLE_STMT);
+					// check_return(ret, "Reading column decimals", columns_stmt, SQL_HANDLE_STMT);
 					ret = SQLGetData(columns_stmt, 11, SQL_C_SSHORT, &Nullable, 0, &indicator);
-					check_return(ret, "Reading column nullable", columns_stmt, SQL_HANDLE_STMT);
+					// check_return(ret, "Reading column nullable", columns_stmt, SQL_HANDLE_STMT);
 					sql_data_type(DataType, ColumnSize, DecimalDigits, Nullable, &sql_type);
 					appendStringInfo(&col_str, "\"%s\" %s", ColumnName, (char *) sql_type.data);
 				}
 			}
+			SQLCloseCursor(columns_stmt);
+			SQLFreeHandle(SQL_HANDLE_STMT, columns_stmt);
 			table_columns = lappend(table_columns, (void*)col_str.data);
 		}
 	}
@@ -1729,10 +1801,11 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 		// temporarily define vars here...
 		char *table_name = (char*)lfirst(tables_cell);
 		char *columns    = (char*)lfirst(table_columns_cell);
+
 		table_columns_cell = lnext(table_columns_cell);
         StringInfoData create_statement;
 		ListCell *option;
-		int first_option = TRUE;
+		int option_count = 0;
 		char *prefix = empty_string_if_null(options.prefix);
 		initStringInfo(&create_statement);
 		appendStringInfo(&create_statement, "CREATE FOREIGN TABLE \"%s%s\" (", prefix, (char *) table_name);
@@ -1742,15 +1815,11 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 		foreach(option, stmt->options)
 		{
 			DefElem *def = (DefElem *) lfirst(option);
-            if (!first_option)
-			{
-				appendStringInfo(&create_statement, ",\n");
-			}
-			else
-			{
-				first_option = FALSE;
-			}
-		    appendStringInfo(&create_statement, "%s '%s'", def->defname, defGetString(def));
+			appendOption(&create_statement, ++option_count == 1, def->defname, defGetString(def));
+		}
+		if (options.table == NULL)
+		{
+			appendOption(&create_statement, ++option_count == 1, "table", table_name);
 		}
 		appendStringInfo(&create_statement, ");");
 		create_statements = lappend(create_statements, (void*)create_statement.data);

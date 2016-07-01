@@ -75,6 +75,7 @@ typedef struct odbcFdwOptions
 	char  *prefix;     /* Prefix for imported foreign table names */
 	char  *sql_query;  /* SQL query (overrides table) */
 	char  *sql_count;  /* SQL query for counting results */
+	char  *encoding;   /* Character encoding name */
 
 	List  *mapping_list; /* Column name mapping */
 } odbcFdwOptions;
@@ -91,6 +92,7 @@ typedef struct odbcFdwExecutionState
 	List            *col_position_mask;
 	List            *col_size_array;
 	char            *sql_count;
+	int             encoding;
 } odbcFdwExecutionState;
 
 struct odbcFdwOption
@@ -111,6 +113,7 @@ static struct odbcFdwOption valid_options[] =
 	{ "host",       ForeignServerRelationId },
 	{ "port",       ForeignServerRelationId },
 	{ "database",   ForeignServerRelationId },
+	{ "encoding",   ForeignServerRelationId },
 
 	/* Foreign table options */
 	{ "schema",     ForeignTableRelationId },
@@ -312,6 +315,12 @@ extract_odbcFdwOptions(List *options_list, odbcFdwOptions *extracted_options)
 			continue;
 		}
 
+		if (strcmp(def->defname, "encoding") == 0)
+		{
+			extracted_options->encoding = defGetString(def);
+			continue;
+		}
+
 		/* Column mapping goes here */
 		/* TODO: is this useful? if so, how can columns names coincident
 		   with option names be escaped? */
@@ -331,6 +340,7 @@ extract_odbcFdwOptions(List *options_list, odbcFdwOptions *extracted_options)
 	normalize_empty_string(&(extracted_options->sql_count));
 	normalize_empty_string(&(extracted_options->username));
 	normalize_empty_string(&(extracted_options->password));
+	normalize_empty_string(&(extracted_options->encoding));
 }
 
 /*
@@ -1184,6 +1194,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 	bool pushdown          = FALSE;
 
 	const char* schema_name;
+	int encoding = -1;
 
 	#ifdef DEBUG
 		elog(DEBUG1, "odbcBeginForeignScan");
@@ -1201,6 +1212,18 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 
 	/* Get name qualifier char */
 	getNameQualifierChar(dbc, &name_qualifier_char);
+
+	if (options.encoding)
+	{
+		encoding = pg_char_to_encoding(options.encoding);
+		if (encoding < 0)
+		{
+			ereport(ERROR,
+			        (errcode(ERRCODE_FDW_INVALID_ATTRIBUTE_VALUE),
+			         errmsg("invalid encoding name \"%s\"", options.encoding)
+			        ));
+		}
+	}
 
 	/* Fetch the table column info */
 	rel = heap_open(RelationGetRelid(node->ss.ss_currentRelation), AccessShareLock);
@@ -1304,6 +1327,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 	festate->num_of_table_cols = num_of_columns;
 	/* prepare for the first iteration, there will be some precalculation needed in the first iteration*/
 	festate->first_iteration = TRUE;
+	festate->encoding = encoding;
 	node->fdw_state = (void *) festate;
 }
 
@@ -1331,6 +1355,7 @@ odbcIterateForeignScan(ForeignScanState *node)
 	StringInfoData  *table_columns = festate->table_columns;
 	List *col_position_mask = NIL;
 	List *col_size_array = NIL;
+	int encoding = 0;
 
 	#ifdef DEBUG
 		elog(DEBUG1, "odbcIterateForeignScan");
@@ -1451,9 +1476,6 @@ odbcIterateForeignScan(ForeignScanState *node)
 			   adding 1 to col_size, or using SQL_C_BIT or SQL_C_BINARY
 			   and then encoded into a binary PG literal (e.g. X'...'
 			   or B'...')
-			   Also, fot text columns, the foreign server/table encoding
-			   should have been defined and here we should translate to
-			   the destination encoding (e.g. UTF-8).
 			   For floating point types we should use SQL_C_FLOAT/SQL_C_DOUBLE
 			   to avoid precision loss.
 			   For date/time/timestamp these structures can be used:
@@ -1473,6 +1495,11 @@ odbcIterateForeignScan(ForeignScanState *node)
 				}
 				else
 				{
+					if (festate->encoding != -1)
+					{
+						/* Convert character encoding */
+						buf = pg_any_to_server(buf, strlen(buf), festate->encoding);
+					}
 				 	initStringInfo(&col_data);
 				 	appendStringInfoString (&col_data, buf);
 

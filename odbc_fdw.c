@@ -1601,6 +1601,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 	List* table_columns = NIL;
 	ListCell *tables_cell;
 	ListCell *table_columns_cell;
+	RangeVar *table_rangevar;
 
 	SQLHENV env;
 	SQLHDBC dbc;
@@ -1750,8 +1751,8 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 					{
 						foreach(tables_cell,  stmt->table_list)
 						{
-							char *table_name = (char*)lfirst(tables_cell);
-							if (strcmp(TableName, table_name) == 0)
+							table_rangevar = (RangeVar*)lfirst(tables_cell);
+							if (strcmp(TableName, table_rangevar->relname) == 0)
 							{
 								excluded = TRUE;
 							}
@@ -1769,7 +1770,11 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 		}
 		else if (stmt->list_type == FDW_IMPORT_SCHEMA_LIMIT_TO)
 		{
-			tables = stmt->table_list;
+			foreach(tables_cell, stmt->table_list)
+			{
+				table_rangevar = (RangeVar*)lfirst(tables_cell);
+				tables = lappend(tables, (void*)table_rangevar->relname);
+			}
 		}
 		else
 		{

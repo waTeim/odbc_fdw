@@ -118,13 +118,13 @@ static struct odbcFdwOption valid_options[] =
 	/* Foreign table options */
 	{ "schema",     ForeignTableRelationId },
 	{ "table",      ForeignTableRelationId },
-	{ "prefix",      ForeignTableRelationId },
+	{ "prefix",     ForeignTableRelationId },
 	{ "sql_query",  ForeignTableRelationId },
 	{ "sql_count",  ForeignTableRelationId },
 
 	/* User mapping options */
-	{ "username",   UserMappingRelationId },
-	{ "password",   UserMappingRelationId },
+	{ "username",   ForeignServerRelationId },
+	{ "password",   ForeignServerRelationId },
 
 	/* Sentinel */
 	{ NULL,       InvalidOid}

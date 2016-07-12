@@ -229,6 +229,16 @@ empty_string_if_null(char *string)
 	return string == NULL ? empty_string : string;
 }
 
+static bool extract_option(const char *option_name, char **extracted_value, DefElem *def)
+{
+	if (strcmp(def->defname, option_name) == 0)
+	{
+		*extracted_value = defGetString(def);
+		return TRUE;
+	}
+	return FALSE;
+}
+
 static void
 extract_odbcFdwOptions(List *options_list, odbcFdwOptions *extracted_options)
 {
@@ -246,81 +256,68 @@ extract_odbcFdwOptions(List *options_list, odbcFdwOptions *extracted_options)
 	{
 		DefElem *def = (DefElem *) lfirst(lc);
 
-		if (strcmp(def->defname, "dsn") == 0)
+        if (extract_option("dsn", &(extracted_options->dsn), def))
 		{
-			extracted_options->dsn = defGetString(def);
 			continue;
 		}
 
-		if (strcmp(def->defname, "driver") == 0)
+		if (extract_option("driver", &(extracted_options->driver), def))
 		{
-			extracted_options->driver = defGetString(def);
 			continue;
 		}
 
-		if (strcmp(def->defname, "host") == 0)
+		if (extract_option("host", &(extracted_options->host), def))
 		{
-			extracted_options->host = defGetString(def);
 			continue;
 		}
 
-		if (strcmp(def->defname, "port") == 0)
+		if (extract_option("port", &(extracted_options->port), def))
 		{
-			extracted_options->port = defGetString(def);
 			continue;
 		}
 
-		if (strcmp(def->defname, "database") == 0)
+		if (extract_option("database", &(extracted_options->database), def))
 		{
-			extracted_options->database = defGetString(def);
 			continue;
 		}
 
-		if (strcmp(def->defname, "schema") == 0)
+		if (extract_option("schema", &(extracted_options->schema), def))
 		{
-			extracted_options->schema = defGetString(def);
 			continue;
 		}
 
-		if (strcmp(def->defname, "table") == 0)
+		if (extract_option("table", &(extracted_options->table), def))
 		{
-			extracted_options->table = defGetString(def);
 			continue;
 		}
 
-		if (strcmp(def->defname, "prefix") == 0)
+		if (extract_option("prefix", &(extracted_options->prefix), def))
 		{
-			extracted_options->prefix = defGetString(def);
 			continue;
 		}
 
-		if (strcmp(def->defname, "sql_query") == 0)
+		if (extract_option("sql_query", &(extracted_options->sql_query), def))
 		{
-			extracted_options->sql_query = defGetString(def);
 			continue;
 		}
 
-		if (strcmp(def->defname, "sql_count") == 0)
+		if (extract_option("sql_count", &(extracted_options->sql_count), def))
 		{
-			extracted_options->sql_count = defGetString(def);
 			continue;
 		}
 
-		if (strcmp(def->defname, "username") == 0)
+		if (extract_option("username", &(extracted_options->username), def))
 		{
-			extracted_options->username = defGetString(def);
 			continue;
 		}
 
-		if (strcmp(def->defname, "password") == 0)
+		if (extract_option("password", &(extracted_options->password), def))
 		{
-			extracted_options->password = defGetString(def);
 			continue;
 		}
 
-		if (strcmp(def->defname, "encoding") == 0)
+		if (extract_option("encoding", &(extracted_options->encoding), def))
 		{
-			extracted_options->encoding = defGetString(def);
 			continue;
 		}
 
@@ -369,6 +366,21 @@ odbc_connection(odbcFdwOptions* options, SQLHENV *env, SQLHDBC *dbc)
 	ret = SQLDriverConnect(*dbc, NULL, (SQLCHAR *) conn_str.data, SQL_NTS,
 	                       OutConnStr, 1024, &OutConnStrLen, SQL_DRIVER_COMPLETE);
 	check_return(ret, "Connecting to driver", dbc, SQL_HANDLE_DBC);
+}
+
+static bool assign_option(const char *option_name, char **option_value, DefElem *definition)
+{
+	if (strcmp(definition->defname, option_name) == 0)
+	{
+		if (!is_blank_string(*option_value))
+			/* Complain about redundent options */
+			ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
+							errmsg("conflicting or redundant options: %s (%s)", option_name, defGetString(definition))
+						   ));
+		*option_value = defGetString(definition);
+		return true;
+	}
+	return false;
 }
 
 /*
@@ -429,123 +441,18 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
 			        ));
 		}
 
-		/* Complain about redundent options */
-		if (strcmp(def->defname, "dsn") == 0)
-		{
-			if (!is_blank_string(dsn))
-				ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
-				                errmsg("conflicting or redundant options: dsn (%s)", defGetString(def))
-				               ));
-
-			dsn = defGetString(def);
-		}
-		else if (strcmp(def->defname, "driver") == 0)
-		{
-			if (!is_blank_string(driver))
-				ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
-				                errmsg("conflicting or redundant options: driver (%s)", defGetString(def))
-				               ));
-
-			driver = defGetString(def);
-		}
-		else if (strcmp(def->defname, "host") == 0)
-		{
-			if (!is_blank_string(svr_host))
-				ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
-				                errmsg("conflicting or redundant options: host (%s)", defGetString(def))
-				               ));
-
-			svr_host = defGetString(def);
-		}
-		else if (strcmp(def->defname, "port") == 0)
-		{
-			if (!is_blank_string(svr_port))
-				ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
-				                errmsg("conflicting or redundant options: port (%s)", defGetString(def))
-				               ));
-
-			svr_port = defGetString(def);
-		}
-		else if (strcmp(def->defname, "database") == 0)
-		{
-			if (!is_blank_string(svr_database))
-				ereport(ERROR,
-				        (errcode(ERRCODE_SYNTAX_ERROR),
-				         errmsg("conflicting or redundant options: database (%s)", defGetString(def))
-				        ));
-
-			svr_database = defGetString(def);
-		}
-		else if (strcmp(def->defname, "schema") == 0)
-		{
-			if (!is_blank_string(svr_schema))
-				ereport(ERROR,
-				        (errcode(ERRCODE_SYNTAX_ERROR),
-				         errmsg("conflicting or redundant options: schema (%s)", defGetString(def))
-				        ));
-
-			svr_schema = defGetString(def);
-		}
-		else if (strcmp(def->defname, "table") == 0)
-		{
-			if (!is_blank_string(svr_table))
-				ereport(ERROR,
-				        (errcode(ERRCODE_SYNTAX_ERROR),
-				         errmsg("conflicting or redundant options: table (%s)", defGetString(def))
-				        ));
-
-			svr_table = defGetString(def);
-		}
-		else if (strcmp(def->defname, "prefix") == 0)
-		{
-			if (!is_blank_string(svr_prefix))
-				ereport(ERROR,
-				        (errcode(ERRCODE_SYNTAX_ERROR),
-				         errmsg("conflicting or redundant options: prefix (%s)", defGetString(def))
-				        ));
-
-			svr_prefix = defGetString(def);
-		}
-		else if (strcmp(def->defname, "sql_query") == 0)
-		{
-			if (sql_query)
-				ereport(ERROR,
-				       (errcode(ERRCODE_SYNTAX_ERROR),
-			            errmsg("conflicting or redundant options: sql_query (%s)", defGetString(def))
-			           ));
-
-			sql_query = defGetString(def);
-		}
-		else if (strcmp(def->defname, "sql_count") == 0)
-		{
-			if (!is_blank_string(sql_count))
-				ereport(ERROR,
-				        (errcode(ERRCODE_SYNTAX_ERROR),
-				         errmsg("conflicting or redundant options: sql_count (%s)", defGetString(def))
-				        ));
-
-			sql_count = defGetString(def);
-		}
-		else if (strcmp(def->defname, "username") == 0)
-		{
-			if (!is_blank_string(username))
-				ereport(ERROR,
-				        (errcode(ERRCODE_SYNTAX_ERROR),
-				         errmsg("conflicting or redundant options: username (%s)", defGetString(def))
-				        ));
-
-			username = defGetString(def);
-		}
-		else if (strcmp(def->defname, "password") == 0)
-		{
-			if (!is_blank_string(password))
-				ereport(ERROR,
-				        (errcode(ERRCODE_SYNTAX_ERROR),
-				         errmsg("conflicting or redundant options: password (%s)", defGetString(def))
-				        ));
-
-			password = defGetString(def);
-		}
+		if      (assign_option("dsn", &dsn, def)) {}
+		else if (assign_option("driver", &driver, def)) {}
+		else if (assign_option("host", &svr_host, def)) {}
+		else if (assign_option("port", &svr_port, def)) {}
+		else if (assign_option("database", &svr_database, def)) {}
+		else if (assign_option("schema", &svr_schema, def)) {}
+		else if (assign_option("table", &svr_table, def)) {}
+		else if (assign_option("prefix", &svr_prefix, def)) {}
+		else if (assign_option("sql_query", &sql_query, def)) {}
+		else if (assign_option("sql_count", &sql_count, def)) {}
+		else if (assign_option("username", &username, def)) {}
+		else if (assign_option("password", &password, def)) {}
 	}
 
 	/* Complain about missing essential options: dsn */

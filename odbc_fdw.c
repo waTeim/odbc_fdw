@@ -626,6 +626,9 @@ sql_data_type(
 		case SQL_TIMESTAMP :
 			appendStringInfo(sql_type, "timestamp");
 			break;
+		case SQL_GUID :
+			appendStringInfo(sql_type, "uuid");
+			break;
 		default :
 			ereport(ERROR,
 			        (errcode(ERRCODE_FDW_INVALID_DATA_TYPE),

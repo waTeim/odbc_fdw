@@ -1084,7 +1084,7 @@ static void odbcEstimateCosts(PlannerInfo *root, RelOptInfo *baserel, Cost *star
 	*total_cost = baserel->rows + *startup_cost;
 
 	#ifdef DEBUG
-		ereport(DEBUG,
+		ereport(DEBUG1,
 		        (errmsg("----> finishing odbcEstimateCosts")
 		       ));
 	#endif
@@ -1108,7 +1108,7 @@ static void odbcGetForeignPaths(PlannerInfo *root, RelOptInfo *baserel, Oid fore
 	         NIL, NULL, NULL, NIL /* no fdw_private list */));
 
 	#ifdef DEBUG
-		ereport(DEBUG,
+		ereport(DEBUG1,
 		        (errmsg("----> finishing odbcGetForeignPaths")
 		       ));
 	#endif
@@ -1123,7 +1123,7 @@ static bool odbcAnalyzeForeignTable(Relation relation, AcquireSampleRowsFunc *fu
 	#endif
 
 	#ifdef DEBUG
-		ereport(DEBUG,
+		ereport(DEBUG1,
 		        (errmsg("----> finishing odbcAnalyzeForeignTable")
 		       ));
 	#endif
@@ -1144,7 +1144,7 @@ static ForeignScan* odbcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel,
 	scan_clauses = extract_actual_clauses(scan_clauses, false);
 
 	#ifdef DEBUG
-		ereport(DEBUG,
+		ereport(DEBUG1,
 		        (errmsg("----> finishing odbcGetForeignPlan")
 		       ));
 	#endif

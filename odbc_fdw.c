@@ -1650,7 +1650,6 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 			               &DecimalDigits,
 			               &Nullable);
 
-            elog(DEBUG1, "COL %s", ColumnName);
 			sql_data_type(DataType, ColumnSize, DecimalDigits, Nullable, &sql_type);
 			if (i > 1)
 			{
@@ -1809,7 +1808,6 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 					appendStringInfo(&col_str, "\"%s\" %s", ColumnName, (char *) sql_type.data);
 				}
 			}
-			elog(DEBUG1,"2222222 ...");
 			SQLCloseCursor(columns_stmt);
 			SQLFreeHandle(SQL_HANDLE_STMT, columns_stmt);
 			table_columns = lappend(table_columns, (void*)col_str.data);

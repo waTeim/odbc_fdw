@@ -1565,7 +1565,7 @@ odbcReScanForeignScan(ForeignScanState *node)
 
 
 static void
-appendOption(StringInfo str, int first, const char* option_name, const char* option_value)
+appendOption(StringInfo str, bool first, const char* option_name, const char* option_value)
 {
 	if (!first)
 	{

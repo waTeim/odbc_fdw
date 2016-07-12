@@ -15,8 +15,8 @@ A list of driver managers is available here: http://en.wikipedia.org/wiki/Open_D
 
 Once that's done, the extension can be built with:
 
-PATH=$(pg_config --bindir):$PATH make USE_PGXS=1
-sudo PATH=$(pg_config --bindir):$PATH make USE_PGXS=1 install
+PATH=$(pg_config --bindir):$PATH make
+sudo PATH=$(pg_config --bindir):$PATH make install
 
 
 TODO

@@ -162,8 +162,8 @@ static void check_return(SQLRETURN ret, char *msg, SQLHANDLE handle, SQLSMALLINT
 static void normalize_empty_string(char **str);
 static char* empty_string_if_null(char *string);
 static void extract_odbcFdwOptions(List *options_list, odbcFdwOptions *extracted_options);
-void init_odbcFdwOptions(odbcFdwOptions* options);
-void copy_odbcFdwOptions(odbcFdwOptions* to, odbcFdwOptions* from);
+static void init_odbcFdwOptions(odbcFdwOptions* options);
+static void copy_odbcFdwOptions(odbcFdwOptions* to, odbcFdwOptions* from);
 static void odbc_connection(odbcFdwOptions* options, SQLHENV *env, SQLHDBC *dbc);
 static void sql_data_type(SQLSMALLINT odbc_data_type, SQLULEN column_size, SQLSMALLINT decimal_digits, SQLSMALLINT nullable, StringInfo sql_type);
 static void odbcGetOptions(Oid server_oid, List *add_options, odbcFdwOptions *extracted_options);
@@ -189,13 +189,13 @@ odbc_fdw_handler(PG_FUNCTION_ARGS)
 	PG_RETURN_POINTER(fdwroutine);
 }
 
-void
+static void
 init_odbcFdwOptions(odbcFdwOptions* options)
 {
 	memset(options, 0, sizeof(odbcFdwOptions));
 }
 
-void
+static void
 copy_odbcFdwOptions(odbcFdwOptions* to, odbcFdwOptions* from)
 {
 	if (to && from)

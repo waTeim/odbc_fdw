@@ -58,6 +58,12 @@ PG_MODULE_MAGIC;
 #define PROCID_TEXTEQ 67
 #define PROCID_TEXTCONST 25
 
+/* Provisional limit to name lengths in characters */
+#define MAXIMUM_CATALOG_NAME_LEN 255
+#define MAXIMUM_SCHEMA_NAME_LEN 255
+#define MAXIMUM_TABLE_NAME_LEN 255
+#define MAXIMUM_COLUMN_NAME_LEN 255
+
 typedef struct odbcFdwOptions
 {
 	/* ODBC common attributes */
@@ -1385,11 +1391,11 @@ odbcIterateForeignScan(ForeignScanState *node)
 		for (i = 1; i <= columns; i++)
 		{
 			found = FALSE;
-			ColumnName = (SQLCHAR *) palloc(sizeof(SQLCHAR) * 255);
+			ColumnName = (SQLCHAR *) palloc(sizeof(SQLCHAR) * MAXIMUM_COLUMN_NAME_LEN);
 			SQLDescribeCol(stmt,
 			               i,                       /* ColumnName */
 			               ColumnName,
-			               sizeof(SQLCHAR) * 255, /* BufferLength */
+			               sizeof(SQLCHAR) * MAXIMUM_COLUMN_NAME_LEN, /* BufferLength */
 			               &NameLengthPtr,
 			               &DataTypePtr,
 			               &ColumnSizePtr,
@@ -1636,14 +1642,14 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 		SQLNumResultCols(query_stmt, &result_columns);
 
 		initStringInfo(&col_str);
-		ColumnName = (SQLCHAR *) palloc(sizeof(SQLCHAR) * 255);
+		ColumnName = (SQLCHAR *) palloc(sizeof(SQLCHAR) * MAXIMUM_COLUMN_NAME_LEN);
 
 		for (i = 1; i <= result_columns; i++)
 		{
 			SQLDescribeCol(query_stmt,
 			               i,                       /* ColumnName */
 			               ColumnName,
-			               sizeof(SQLCHAR) * 255, /* BufferLength */
+			               sizeof(SQLCHAR) * MAXIMUM_COLUMN_NAME_LEN, /* BufferLength */
 			               &NameLength,
 			               &DataType,
 			               &ColumnSize,
@@ -1689,16 +1695,16 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 			check_return(ret, "Obtaining ODBC tables", tables_stmt, SQL_HANDLE_STMT);
 
 			initStringInfo(&col_str);
-			SQLCHAR *table_catalog = (SQLCHAR *) palloc(sizeof(SQLCHAR) * 255);
-			SQLCHAR *table_schema = (SQLCHAR *) palloc(sizeof(SQLCHAR) * 255);
+			SQLCHAR *table_catalog = (SQLCHAR *) palloc(sizeof(SQLCHAR) * MAXIMUM_CATALOG_NAME_LEN);
+			SQLCHAR *table_schema = (SQLCHAR *) palloc(sizeof(SQLCHAR) * MAXIMUM_SCHEMA_NAME_LEN);
 			while (SQL_SUCCESS == ret)
 			{
 				ret = SQLFetch(tables_stmt);
 				if (SQL_SUCCESS == ret)
 				{
 					int excluded = FALSE;
-					TableName = (SQLCHAR *) palloc(sizeof(SQLCHAR) * 255);
-					ret = SQLGetData(tables_stmt, 3, SQL_C_CHAR, TableName, 255, &indicator);
+					TableName = (SQLCHAR *) palloc(sizeof(SQLCHAR) * MAXIMUM_TABLE_NAME_LEN);
+					ret = SQLGetData(tables_stmt, 3, SQL_C_CHAR, TableName, MAXIMUM_TABLE_NAME_LEN, &indicator);
 					check_return(ret, "Reading table name", tables_stmt, SQL_HANDLE_STMT);
 
 					/* Since we're not filtering the SQLTables call by schema
@@ -1708,7 +1714,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 					   So we only reject tables for which the schema is not
 					   blank and different from the desired schema:
 					 */
-					ret = SQLGetData(tables_stmt, 2, SQL_C_CHAR, table_schema, 255, &indicator);
+					ret = SQLGetData(tables_stmt, 2, SQL_C_CHAR, table_schema, MAXIMUM_SCHEMA_NAME_LEN, &indicator);
 					if (!is_blank_string(table_schema) && strcmp(table_schema, schema_name) )
 					{
 						excluded = TRUE;
@@ -1721,7 +1727,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 					   but to be sure we'll reject tables from catalogs with
 					   other names:
 					 */
-					ret = SQLGetData(tables_stmt, 1, SQL_C_CHAR, table_catalog, 255, &indicator);
+					ret = SQLGetData(tables_stmt, 1, SQL_C_CHAR, table_catalog, MAXIMUM_CATALOG_NAME_LEN, &indicator);
 					if (!is_blank_string(table_catalog) && strcmp(table_catalog, schema_name))
 					{
 						if (is_blank_string(options.database) || strcmp(table_catalog, options.database))
@@ -1784,7 +1790,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 
             i = 0;
 			initStringInfo(&col_str);
-			ColumnName = (SQLCHAR *) palloc(sizeof(SQLCHAR) * 255);
+			ColumnName = (SQLCHAR *) palloc(sizeof(SQLCHAR) * MAXIMUM_COLUMN_NAME_LEN);
 			while (SQL_SUCCESS == ret)
 			{
 				ret = SQLFetch(columns_stmt);
@@ -1794,9 +1800,9 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 					{
 						appendStringInfo(&col_str, ", ");
 					}
-					ret = SQLGetData(columns_stmt, 4, SQL_C_CHAR, ColumnName, 255, &indicator);
+					ret = SQLGetData(columns_stmt, 4, SQL_C_CHAR, ColumnName, MAXIMUM_COLUMN_NAME_LEN, &indicator);
 					// check_return(ret, "Reading column name", columns_stmt, SQL_HANDLE_STMT);
-					ret = SQLGetData(columns_stmt, 5, SQL_C_SSHORT, &DataType, 255, &indicator);
+					ret = SQLGetData(columns_stmt, 5, SQL_C_SSHORT, &DataType, MAXIMUM_COLUMN_NAME_LEN, &indicator);
 					// check_return(ret, "Reading column type", columns_stmt, SQL_HANDLE_STMT);
 					ret = SQLGetData(columns_stmt, 7, SQL_C_SLONG, &ColumnSize, 0, &indicator);
 					// check_return(ret, "Reading column size", columns_stmt, SQL_HANDLE_STMT);

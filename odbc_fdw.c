@@ -159,7 +159,6 @@ List* odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid);
  */
 static bool odbcIsValidOption(const char *option, Oid context);
 static void check_return(SQLRETURN ret, char *msg, SQLHANDLE handle, SQLSMALLINT type);
-static void normalize_empty_string(char **str);
 static char* empty_string_if_null(char *string);
 static void extract_odbcFdwOptions(List *options_list, odbcFdwOptions *extracted_options);
 static void init_odbcFdwOptions(odbcFdwOptions* options);
@@ -170,6 +169,14 @@ static void odbcGetOptions(Oid server_oid, List *add_options, odbcFdwOptions *ex
 static void odbcGetTableOptions(Oid foreigntableid, odbcFdwOptions *extracted_options);
 static void check_return(SQLRETURN ret, char *msg, SQLHANDLE handle, SQLSMALLINT type);
 static void odbcConnStr(StringInfoData *conn_str, odbcFdwOptions* options);
+
+/*
+ * Check if string pointer is NULL or points to empty string
+ */
+inline bool is_blank_string(const char *s)
+{
+	return s == NULL || s[0] == '\0';
+}
 
 Datum
 odbc_fdw_handler(PG_FUNCTION_ARGS)
@@ -201,18 +208,6 @@ copy_odbcFdwOptions(odbcFdwOptions* to, odbcFdwOptions* from)
 	if (to && from)
 	{
 		*to = *from;
-	}
-}
-
-/*
- * Replace empty string by null pointer
- */
-static void
-normalize_empty_string(char **str)
-{
-	if (*str && !**str)
-	{
-		*str = NULL;
 	}
 }
 
@@ -326,21 +321,6 @@ extract_odbcFdwOptions(List *options_list, odbcFdwOptions *extracted_options)
 		   with option names be escaped? */
 		extracted_options->mapping_list = lappend(extracted_options->mapping_list, def);
 	}
-
-	/* Convert empty strings to NULL pointers */
-	normalize_empty_string(&(extracted_options->dsn));
-	normalize_empty_string(&(extracted_options->driver));
-	normalize_empty_string(&(extracted_options->host));
-	normalize_empty_string(&(extracted_options->port));
-	normalize_empty_string(&(extracted_options->database));
-	normalize_empty_string(&(extracted_options->schema));
-	normalize_empty_string(&(extracted_options->table));
-	normalize_empty_string(&(extracted_options->prefix));
-	normalize_empty_string(&(extracted_options->sql_query));
-	normalize_empty_string(&(extracted_options->sql_count));
-	normalize_empty_string(&(extracted_options->username));
-	normalize_empty_string(&(extracted_options->password));
-	normalize_empty_string(&(extracted_options->encoding));
 }
 
 /*
@@ -349,7 +329,7 @@ extract_odbcFdwOptions(List *options_list, odbcFdwOptions *extracted_options)
 char* get_schema_name(odbcFdwOptions *options)
 {
 	char* schema_name = options->schema;
-	if (schema_name == NULL)
+	if (is_blank_string(schema_name))
 	{
 		/* TODO: this is just a MySQL convenience; should remove it? */
 		schema_name = options->database;
@@ -444,7 +424,7 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
 		/* Complain about redundent options */
 		if (strcmp(def->defname, "dsn") == 0)
 		{
-			if (dsn)
+			if (!is_blank_string(dsn))
 				ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
 				                errmsg("conflicting or redundant options: dsn (%s)", defGetString(def))
 				               ));
@@ -453,7 +433,7 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
 		}
 		else if (strcmp(def->defname, "driver") == 0)
 		{
-			if (driver)
+			if (!is_blank_string(driver))
 				ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
 				                errmsg("conflicting or redundant options: driver (%s)", defGetString(def))
 				               ));
@@ -462,7 +442,7 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
 		}
 		else if (strcmp(def->defname, "host") == 0)
 		{
-			if (svr_host)
+			if (!is_blank_string(svr_host))
 				ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
 				                errmsg("conflicting or redundant options: host (%s)", defGetString(def))
 				               ));
@@ -471,7 +451,7 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
 		}
 		else if (strcmp(def->defname, "port") == 0)
 		{
-			if (svr_port)
+			if (!is_blank_string(svr_port))
 				ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
 				                errmsg("conflicting or redundant options: port (%s)", defGetString(def))
 				               ));
@@ -480,7 +460,7 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
 		}
 		else if (strcmp(def->defname, "database") == 0)
 		{
-			if (svr_database)
+			if (!is_blank_string(svr_database))
 				ereport(ERROR,
 				        (errcode(ERRCODE_SYNTAX_ERROR),
 				         errmsg("conflicting or redundant options: database (%s)", defGetString(def))
@@ -490,7 +470,7 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
 		}
 		else if (strcmp(def->defname, "schema") == 0)
 		{
-			if (svr_schema)
+			if (!is_blank_string(svr_schema))
 				ereport(ERROR,
 				        (errcode(ERRCODE_SYNTAX_ERROR),
 				         errmsg("conflicting or redundant options: schema (%s)", defGetString(def))
@@ -500,7 +480,7 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
 		}
 		else if (strcmp(def->defname, "table") == 0)
 		{
-			if (svr_table)
+			if (!is_blank_string(svr_table))
 				ereport(ERROR,
 				        (errcode(ERRCODE_SYNTAX_ERROR),
 				         errmsg("conflicting or redundant options: table (%s)", defGetString(def))
@@ -510,7 +490,7 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
 		}
 		else if (strcmp(def->defname, "prefix") == 0)
 		{
-			if (svr_prefix)
+			if (!is_blank_string(svr_prefix))
 				ereport(ERROR,
 				        (errcode(ERRCODE_SYNTAX_ERROR),
 				         errmsg("conflicting or redundant options: prefix (%s)", defGetString(def))
@@ -530,7 +510,7 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
 		}
 		else if (strcmp(def->defname, "sql_count") == 0)
 		{
-			if (sql_count)
+			if (!is_blank_string(sql_count))
 				ereport(ERROR,
 				        (errcode(ERRCODE_SYNTAX_ERROR),
 				         errmsg("conflicting or redundant options: sql_count (%s)", defGetString(def))
@@ -540,7 +520,7 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
 		}
 		else if (strcmp(def->defname, "username") == 0)
 		{
-			if (username)
+			if (!is_blank_string(username))
 				ereport(ERROR,
 				        (errcode(ERRCODE_SYNTAX_ERROR),
 				         errmsg("conflicting or redundant options: username (%s)", defGetString(def))
@@ -550,7 +530,7 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
 		}
 		else if (strcmp(def->defname, "password") == 0)
 		{
-			if (password)
+			if (!is_blank_string(password))
 				ereport(ERROR,
 				        (errcode(ERRCODE_SYNTAX_ERROR),
 				         errmsg("conflicting or redundant options: password (%s)", defGetString(def))
@@ -561,7 +541,7 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
 	}
 
 	/* Complain about missing essential options: dsn */
-	if (!dsn && !driver && catalog == ForeignServerRelationId)
+	if (is_blank_string(dsn) && is_blank_string(driver) && catalog == ForeignServerRelationId)
 		ereport(ERROR,
 		        (errcode(ERRCODE_SYNTAX_ERROR),
 		         errmsg("missing essential information: dsn (Database Source Name) or driver")
@@ -783,47 +763,47 @@ static void odbcConnStr(StringInfoData *conn_str, odbcFdwOptions* options)
 	bool sep = FALSE;
 	static char *sep_str = ";";
 	initStringInfo(conn_str);
-	if (options->dsn)
+	if (!is_blank_string(options->dsn))
 	{
 		appendStringInfo(conn_str, "DSN=%s", options->dsn);
 		sep = TRUE;
 	}
-	if (options->driver)
+	if (!is_blank_string(options->driver))
 	{
 		if (sep)
 			appendStringInfoString(conn_str, sep_str);
 		appendStringInfo(conn_str, "DRIVER=%s", options->driver);
 		sep = TRUE;
 	}
-	if (options->host)
+	if (!is_blank_string(options->host))
 	{
 		if (sep)
 			appendStringInfoString(conn_str, sep_str);
 		appendStringInfo(conn_str, "SERVER=%s", options->host);
 		sep = TRUE;
  	}
-	if (options->port)
+	if (!is_blank_string(options->port))
 	{
 		if (sep)
 			appendStringInfoString(conn_str, sep_str);
 		appendStringInfo(conn_str, "PORT=%s", options->port);
 		sep = TRUE;
 	}
-	if (options->database)
+	if (!is_blank_string(options->database))
 	{
 		if (sep)
 			appendStringInfoString(conn_str, sep_str);
 		appendStringInfo(conn_str, "DATABASE=%s", options->database);
 		sep = TRUE;
 	}
-	if (options->username)
+	if (!is_blank_string(options->username))
 	{
 		if (sep)
 			appendStringInfoString(conn_str, sep_str);
 		appendStringInfo(conn_str, "UID=%s", options->username);
 		sep = TRUE;
 	}
-	if (options->password)
+	if (!is_blank_string(options->password))
 	{
 		if (sep)
 			appendStringInfoString(conn_str, sep_str);
@@ -860,7 +840,7 @@ odbcGetTableSize(odbcFdwOptions* options, unsigned int *size)
 	/* Allocate a statement handle */
 	SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
 
-	if (options->sql_count == NULL)
+	if (is_blank_string(options->sql_count))
 	{
 		/* Get quote char */
 		getQuoteChar(dbc, &quote_char);
@@ -869,9 +849,9 @@ odbcGetTableSize(odbcFdwOptions* options, unsigned int *size)
 		getNameQualifierChar(dbc, &name_qualifier_char);
 
 		initStringInfo(&sql_str);
-		if (options->sql_query == NULL)
+		if (is_blank_string(options->sql_query))
 		{
-			if (schema_name == NULL)
+			if (is_blank_string(schema_name))
 			{
 				appendStringInfo(&sql_str, "SELECT COUNT(*) FROM %s%s%s",
 				                 quote_char.data, options->table, quote_char.data);
@@ -1088,6 +1068,7 @@ static void odbcEstimateCosts(PlannerInfo *root, RelOptInfo *baserel, Cost *star
 		        (errmsg("----> finishing odbcEstimateCosts")
 		       ));
 	#endif
+
 }
 
 static void odbcGetForeignPaths(PlannerInfo *root, RelOptInfo *baserel, Oid foreigntableid)
@@ -1213,7 +1194,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 	/* Get name qualifier char */
 	getNameQualifierChar(dbc, &name_qualifier_char);
 
-	if (options.encoding)
+	if (!is_blank_string(options.encoding))
 	{
 		encoding = pg_char_to_encoding(options.encoding);
 		if (encoding < 0)
@@ -1280,7 +1261,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 
 	/* Construct the SQL statement used for remote querying */
 	initStringInfo(&sql);
-	if (options.sql_query)
+	if (!is_blank_string(options.sql_query))
 	{
 		/* Use custom query if it's available */
 		appendStringInfo(&sql, "%s", options.sql_query);
@@ -1288,7 +1269,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 	else
 	{
 		/* Get options.table */
-		if (schema_name == NULL)
+		if (is_blank_string(schema_name))
 		{
 			appendStringInfo(&sql, "SELECT %s FROM %s%s%s", col_str.data,
 							 (char *) quote_char.data, options.table, (char *) quote_char.data);
@@ -1631,10 +1612,10 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 
 	schema_name = get_schema_name(&options);
 
-	if (options.sql_query)
+	if (!is_blank_string(options.sql_query))
 	{
 		/* Generate foreign table for a query */
-		if (!options.table)
+		if (is_blank_string(options.table))
 		{
 			/* TODO: error */
 			elog(ERROR, "Must provide 'table' option to name the foreign table");
@@ -1666,6 +1647,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 			               &DecimalDigits,
 			               &Nullable);
 
+            elog(DEBUG1, "COL %s", ColumnName);
 			sql_data_type(DataType, ColumnSize, DecimalDigits, Nullable, &sql_type);
 			if (i > 1)
 			{
@@ -1682,7 +1664,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 	else
 	{
 		/* Reflect one or more foreign tables */
-		if (options.table)
+		if (!is_blank_string(options.table))
 		{
 			tables = lappend(tables, (void*)options.table);
 		}
@@ -1725,10 +1707,10 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 					   blank and different from the desired schema:
 					 */
 					ret = SQLGetData(tables_stmt, 2, SQL_C_CHAR, table_schema, 255, &indicator);
- 					if (table_schema[0] != 0 && strcmp(table_schema, schema_name) )
- 					{
- 						excluded = TRUE;
- 					}
+					if (!is_blank_string(table_schema) && strcmp(table_schema, schema_name) )
+					{
+						excluded = TRUE;
+					}
 
 					/* Since we haven't specified SQL_ALL_CATALOGS in the
 					   call to SQLTables we shouldn't get tables from special
@@ -1738,9 +1720,9 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 					   other names:
 					 */
 					ret = SQLGetData(tables_stmt, 1, SQL_C_CHAR, table_catalog, 255, &indicator);
-					if (table_catalog[0] != 0 && strcmp(table_catalog, schema_name))
+					if (!is_blank_string(table_catalog) && strcmp(table_catalog, schema_name))
 					{
-						if (options.database == NULL || strcmp(table_catalog, options.database))
+						if (is_blank_string(options.database) || strcmp(table_catalog, options.database))
 						{
 							excluded = TRUE;
 						}
@@ -1810,7 +1792,9 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 					{
 						appendStringInfo(&col_str, ", ");
 					}
+					elog(DEBUG1,"1111111 ...");
 					ret = SQLGetData(columns_stmt, 4, SQL_C_CHAR, ColumnName, 255, &indicator);
+					elog(DEBUG1, "COLUMN %s", ColumnName);
 					// check_return(ret, "Reading column name", columns_stmt, SQL_HANDLE_STMT);
 					ret = SQLGetData(columns_stmt, 5, SQL_C_SSHORT, &DataType, 255, &indicator);
 					// check_return(ret, "Reading column type", columns_stmt, SQL_HANDLE_STMT);
@@ -1824,6 +1808,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 					appendStringInfo(&col_str, "\"%s\" %s", ColumnName, (char *) sql_type.data);
 				}
 			}
+			elog(DEBUG1,"2222222 ...");
 			SQLCloseCursor(columns_stmt);
 			SQLFreeHandle(SQL_HANDLE_STMT, columns_stmt);
 			table_columns = lappend(table_columns, (void*)col_str.data);
@@ -1853,11 +1838,12 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 			DefElem *def = (DefElem *) lfirst(option);
 			appendOption(&create_statement, ++option_count == 1, def->defname, defGetString(def));
 		}
-		if (options.table == NULL)
+		if (is_blank_string(options.table))
 		{
 			appendOption(&create_statement, ++option_count == 1, "table", table_name);
 		}
 		appendStringInfo(&create_statement, ");");
+		elog(DEBUG1, "CREATE: %s", create_statement.data);
 		create_statements = lappend(create_statements, (void*)create_statement.data);
 	}
 

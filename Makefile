@@ -21,8 +21,6 @@ DATA = odbc_fdw--1.0.sql
 
 REGRESS = odbc_fdw
 
-EXTRA_CLEAN = sql/odbc_fdw.sql expected/odbc_fdw.out
-
 SHLIB_LINK = -lodbc
 
 ifdef DEBUG

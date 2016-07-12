@@ -1795,9 +1795,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 					{
 						appendStringInfo(&col_str, ", ");
 					}
-					elog(DEBUG1,"1111111 ...");
 					ret = SQLGetData(columns_stmt, 4, SQL_C_CHAR, ColumnName, 255, &indicator);
-					elog(DEBUG1, "COLUMN %s", ColumnName);
 					// check_return(ret, "Reading column name", columns_stmt, SQL_HANDLE_STMT);
 					ret = SQLGetData(columns_stmt, 5, SQL_C_SSHORT, &DataType, 255, &indicator);
 					// check_return(ret, "Reading column type", columns_stmt, SQL_HANDLE_STMT);

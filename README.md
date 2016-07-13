@@ -8,14 +8,26 @@ This was originally developed by Zheng Yang <zhengyang4k@gmail.com> in 2011,
 with contributions by Gunnar "Nick" Bluth <nick@pro-open.de> from 2014
 and further developed by CARTO <dataservices@carto.com> since 2016.
 
+Requirements
+------------
+
+To compile and install this extension, assuming a Linux OS,
+the libraries and header files for ODBC and PostgreSQL are needed,
+e.g. in Ubuntu this can be provided by the `unixodbc-dev`
+and `postgresql-server-dev-9.5` system packages.
+
+To make use of the extension ODBC drivers for the data sources to
+be used must be installed in the system and reflected
+in the `/etc/odbcinst.ini` file.
+
 Building and Installing
 -----------------------
 
 The extension can be built and installed with:
 
 ```sh
-PATH=$(pg_config --bindir):$PATH make
-sudo PATH=$(pg_config --bindir):$PATH make install
+make
+sudo make install
 ```
 
 Usage
@@ -32,7 +44,7 @@ the server definition (`CREATE SERVER`).
 
 option   | description
 -------- | -----------
-`dsn`    | The Database Source Name for the foreign database system you're connecting to.
+`dsn`    | The Database Source Name of the foreign database system you're connecting to.
 `driver` | The name of the ODBC driver to use (needed if no dsn is used)
 
 These additional ODBC connection options are supported and can be defined
@@ -40,11 +52,11 @@ either in the server or foreign table definition (or in an IMPORT FOREIGN SCHEMA
 
 option     | description
 ---------- | -----------
-`host`     | The name of the server which provides the database.
+`host`     | The address (hostname or ip) of the database server.
 `port`     | The server port to connect to.
 `database` | The name of the database to query.
-`username` | The username to authenticate to the foreign server with.
-`password` | The password to authenticate to the foreign server with.
+`username` | The username to authenticate in the foreign server with.
+`password` | The password to authenticate in the foreign server with.
 
 The `username` and `password` options can also be defined
 in a `CREATE USER MAPPING` statement, so that they are determined by
@@ -66,8 +78,8 @@ Example
 -------
 
 Assuming that the `odbc_fdw` is installed and available
-in our database (`CREATE EXTENSION odbc_fdw`), and that
-we have a DNS `test` defined for some ODBC datasource which
+in your database (`CREATE EXTENSION odbc_fdw`), and that
+you have a DNS `test` defined for some ODBC datasource which
 has a table named `dblist` in a schema named `test`:
 
 ```sql

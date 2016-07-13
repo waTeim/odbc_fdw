@@ -62,8 +62,6 @@ option     | description
 `sql_count`| Optional: User defined SQL statement for counting number of records in the foreign table(s). This should use the syntax of ODBC driver used.
 `prefix`   | For IMPORT FOREIGN SCHEMA: a prefix for foreign table names. This can be used to prepend a prefix to the names of tables imported from an external database.
 
-Any additional option is interpreted as a column mapping to assign different local names to the columns of a foreign table
-
 Example
 -------
 
@@ -79,24 +77,18 @@ CREATE SERVER odbc_server
 
 CREATE FOREIGN TABLE
   odbc_table (
-    db_id integer,
-    db_name varchar(255),
-    db_desc text,
-    db_users float4,
-    db_createdtime timestamp
+    id integer,
+    name varchar(255),
+    desc text,
+    users float4,
+    createdtime timestamp
   )
   SERVER odbc_server
   OPTIONS (
     database 'myplace',
     schema 'test',
     sql_query 'select description,id,name,created_datetime,sd,users from `test`.`dblist`',
-    sql_count 'select count(id) from `test`.`dblist`',
-    -- column mappings
-    db_id 'id',
-    db_name 'name',
-    db_desc 'description',
-    db_users 'users',
-    db_createdtime 'created_datetime'
+    sql_count 'select count(id) from `test`.`dblist`'
   );
 
 CREATE USER MAPPING FOR postgres
@@ -131,12 +123,6 @@ IMPORT FOREIGN SCHEMA test
     database 'myplace',
     table 'odbc_table', -- this will be the name of the created foreign table
     sql_query 'select description,id,name,created_datetime,sd,users from `test`.`dblist`'
-    -- column mappings
-    db_id 'id',
-    db_name 'name',
-    db_desc 'description',
-    db_users 'users',
-    db_createdtime 'created_datetime'
   );
 ```
 

@@ -50,7 +50,7 @@ The `username` and `password` options can also be defined
 in a `CREATE USER MAPPING` statement, so that they are determined by
 the connected PostgreSQL role.
 
-These options are used to define the table or query to connect a
+The next options are used to define the table or query to connect a
 foreign table to. They should be defined either in `CREATE FOREIGN TABLE`
 or `IMPORT FOREIGN SCHEMA` statements:
 

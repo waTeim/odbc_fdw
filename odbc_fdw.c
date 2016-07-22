@@ -222,10 +222,10 @@ copy_odbcFdwOptions(odbcFdwOptions* to, odbcFdwOptions* from)
 /*
  * Avoid NULL string: return original string, or empty string if NULL
  */
-static char*
+static const char*
 empty_string_if_null(char *string)
 {
-	static char* empty_string = "";
+	static const char* empty_string = "";
 	return string == NULL ? empty_string : string;
 }
 

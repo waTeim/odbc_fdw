@@ -786,7 +786,6 @@ static void odbcConnStr(StringInfoData *conn_str, odbcFdwOptions* options)
 {
 	bool sep = FALSE;
 	initStringInfo(conn_str);
-	if (!is_blank_string(options->dsn))
 	sep = appendConnAttribute(sep, conn_str, "DSN",      options->dsn);
 	sep = appendConnAttribute(sep, conn_str, "DRIVER",   options->driver);
 	sep = appendConnAttribute(sep, conn_str, "SERVER",   options->host);     /* TODO: "HOST" in some cases */

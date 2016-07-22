@@ -793,7 +793,9 @@ static void odbcConnStr(StringInfoData *conn_str, odbcFdwOptions* options)
 	sep = appendConnAttribute(sep, conn_str, "DATABASE", options->database);
 	sep = appendConnAttribute(sep, conn_str, "UID",      options->username); /* TODO: "USER" in some cases */
 	sep = appendConnAttribute(sep, conn_str, "PWD",      options->password); /* TODO: "PASSWORD" in some cases */
-	elog(DEBUG1,"CONN STR: %s", conn_str->data);
+	#ifdef DEBUG
+		elog(DEBUG1,"CONN STR: %s", conn_str->data);
+	#endif
 }
 
 /*

@@ -1572,6 +1572,38 @@ odbcReScanForeignScan(ForeignScanState *node)
 }
 
 
+static const char*
+quotedString(const char* text)
+{
+	static StringInfoData buffer;
+	static const char SINGLE_QUOTE = '\'';
+	const char *p;
+
+	initStringInfo(&buffer);
+	appendStringInfoChar(&buffer, SINGLE_QUOTE);
+
+    while (*text)
+	{
+		p = text;
+		while (*p && *p != SINGLE_QUOTE)
+		{
+			p++;
+		}
+	    appendBinaryStringInfo(&buffer, text, p-text);
+		if (*p == SINGLE_QUOTE)
+		{
+			appendStringInfoChar(&buffer, SINGLE_QUOTE);
+			appendStringInfoChar(&buffer, SINGLE_QUOTE);
+			p++;
+		}
+		text = p;
+	}
+
+	appendStringInfoChar(&buffer, SINGLE_QUOTE);
+
+	return buffer.data;
+}
+
 static void
 appendOption(StringInfo str, bool first, const char* option_name, const char* option_value)
 {
@@ -1579,7 +1611,7 @@ appendOption(StringInfo str, bool first, const char* option_name, const char* op
 	{
 		appendStringInfo(str, ",\n");
 	}
-	appendStringInfo(str, "%s '%s'", option_name, option_value);
+	appendStringInfo(str, "%s %s", option_name, quotedString(option_value));
 }
 
 List *

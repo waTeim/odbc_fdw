@@ -771,7 +771,7 @@ getQuoteChar(SQLHDBC dbc, StringInfoData *q_char)
 
 static bool appendConnAttribute(bool sep, StringInfoData *conn_str, const char* name, const char* value)
 {
-	static char *sep_str = ";";
+	static const char *sep_str = ";";
 	if (!is_blank_string(value))
 	{
 		if (sep)

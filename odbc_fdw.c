@@ -1572,15 +1572,13 @@ odbcReScanForeignScan(ForeignScanState *node)
 }
 
 
-static const char*
-quotedString(const char* text)
+static void
+appendQuotedString(StringInfo buffer, const char* text)
 {
-	static StringInfoData buffer;
 	static const char SINGLE_QUOTE = '\'';
 	const char *p;
 
-	initStringInfo(&buffer);
-	appendStringInfoChar(&buffer, SINGLE_QUOTE);
+	appendStringInfoChar(buffer, SINGLE_QUOTE);
 
     while (*text)
 	{
@@ -1589,19 +1587,17 @@ quotedString(const char* text)
 		{
 			p++;
 		}
-	    appendBinaryStringInfo(&buffer, text, p - text);
+	    appendBinaryStringInfo(buffer, text, p - text);
 		if (*p == SINGLE_QUOTE)
 		{
-			appendStringInfoChar(&buffer, SINGLE_QUOTE);
-			appendStringInfoChar(&buffer, SINGLE_QUOTE);
+			appendStringInfoChar(buffer, SINGLE_QUOTE);
+			appendStringInfoChar(buffer, SINGLE_QUOTE);
 			p++;
 		}
 		text = p;
 	}
 
-	appendStringInfoChar(&buffer, SINGLE_QUOTE);
-
-	return buffer.data;
+	appendStringInfoChar(buffer, SINGLE_QUOTE);
 }
 
 static void
@@ -1611,7 +1607,8 @@ appendOption(StringInfo str, bool first, const char* option_name, const char* op
 	{
 		appendStringInfo(str, ",\n");
 	}
-	appendStringInfo(str, "%s %s", option_name, quotedString(option_value));
+	appendStringInfo(str, "%s ", option_name);
+	appendQuotedString(str, option_value);
 }
 
 List *

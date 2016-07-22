@@ -1589,7 +1589,7 @@ quotedString(const char* text)
 		{
 			p++;
 		}
-	    appendBinaryStringInfo(&buffer, text, p-text);
+	    appendBinaryStringInfo(&buffer, text, p - text);
 		if (*p == SINGLE_QUOTE)
 		{
 			appendStringInfoChar(&buffer, SINGLE_QUOTE);

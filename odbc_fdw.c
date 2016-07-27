@@ -167,7 +167,7 @@ List* odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid);
  */
 static bool odbcIsValidOption(const char *option, Oid context);
 static void check_return(SQLRETURN ret, char *msg, SQLHANDLE handle, SQLSMALLINT type);
-static char* empty_string_if_null(char *string);
+static const char* empty_string_if_null(char *string);
 static void extract_odbcFdwOptions(List *options_list, odbcFdwOptions *extracted_options);
 static void init_odbcFdwOptions(odbcFdwOptions* options);
 static void copy_odbcFdwOptions(odbcFdwOptions* to, odbcFdwOptions* from);

@@ -222,10 +222,10 @@ copy_odbcFdwOptions(odbcFdwOptions* to, odbcFdwOptions* from)
 /*
  * Avoid NULL string: return original string, or empty string if NULL
  */
-static char*
+static const char*
 empty_string_if_null(char *string)
 {
-	static char* empty_string = "";
+	static const char* empty_string = "";
 	return string == NULL ? empty_string : string;
 }
 
@@ -1548,13 +1548,42 @@ odbcReScanForeignScan(ForeignScanState *node)
 
 
 static void
+appendQuotedString(StringInfo buffer, const char* text)
+{
+	static const char SINGLE_QUOTE = '\'';
+	const char *p;
+
+	appendStringInfoChar(buffer, SINGLE_QUOTE);
+
+    while (*text)
+	{
+		p = text;
+		while (*p && *p != SINGLE_QUOTE)
+		{
+			p++;
+		}
+	    appendBinaryStringInfo(buffer, text, p - text);
+		if (*p == SINGLE_QUOTE)
+		{
+			appendStringInfoChar(buffer, SINGLE_QUOTE);
+			appendStringInfoChar(buffer, SINGLE_QUOTE);
+			p++;
+		}
+		text = p;
+	}
+
+	appendStringInfoChar(buffer, SINGLE_QUOTE);
+}
+
+static void
 appendOption(StringInfo str, bool first, const char* option_name, const char* option_value)
 {
 	if (!first)
 	{
 		appendStringInfo(str, ",\n");
 	}
-	appendStringInfo(str, "%s '%s'", option_name, option_value);
+	appendStringInfo(str, "%s ", option_name);
+	appendQuotedString(str, option_value);
 }
 
 List *

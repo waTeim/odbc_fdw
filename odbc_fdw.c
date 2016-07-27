@@ -769,58 +769,33 @@ getQuoteChar(SQLHDBC dbc, StringInfoData *q_char)
 	appendStringInfo(q_char, "%s", (char *) quote_char);
 }
 
+static bool appendConnAttribute(bool sep, StringInfoData *conn_str, const char* name, const char* value)
+{
+	static const char *sep_str = ";";
+	if (!is_blank_string(value))
+	{
+		if (sep)
+			appendStringInfoString(conn_str, sep_str);
+		appendStringInfo(conn_str, "%s={%s}", name, value);
+		sep = TRUE;
+	}
+	return sep;
+}
+
 static void odbcConnStr(StringInfoData *conn_str, odbcFdwOptions* options)
 {
 	bool sep = FALSE;
-	static char *sep_str = ";";
 	initStringInfo(conn_str);
-	if (!is_blank_string(options->dsn))
-	{
-		appendStringInfo(conn_str, "DSN=%s", options->dsn);
-		sep = TRUE;
-	}
-	if (!is_blank_string(options->driver))
-	{
-		if (sep)
-			appendStringInfoString(conn_str, sep_str);
-		appendStringInfo(conn_str, "DRIVER=%s", options->driver);
-		sep = TRUE;
-	}
-	if (!is_blank_string(options->host))
-	{
-		if (sep)
-			appendStringInfoString(conn_str, sep_str);
-		appendStringInfo(conn_str, "SERVER=%s", options->host);
-		sep = TRUE;
- 	}
-	if (!is_blank_string(options->port))
-	{
-		if (sep)
-			appendStringInfoString(conn_str, sep_str);
-		appendStringInfo(conn_str, "PORT=%s", options->port);
-		sep = TRUE;
-	}
-	if (!is_blank_string(options->database))
-	{
-		if (sep)
-			appendStringInfoString(conn_str, sep_str);
-		appendStringInfo(conn_str, "DATABASE=%s", options->database);
-		sep = TRUE;
-	}
-	if (!is_blank_string(options->username))
-	{
-		if (sep)
-			appendStringInfoString(conn_str, sep_str);
-		appendStringInfo(conn_str, "UID=%s", options->username);
-		sep = TRUE;
-	}
-	if (!is_blank_string(options->password))
-	{
-		if (sep)
-			appendStringInfoString(conn_str, sep_str);
-		appendStringInfo(conn_str, "PWD=%s", options->password);
-		sep = TRUE;
-	}
+	sep = appendConnAttribute(sep, conn_str, "DSN",      options->dsn);
+	sep = appendConnAttribute(sep, conn_str, "DRIVER",   options->driver);
+	sep = appendConnAttribute(sep, conn_str, "SERVER",   options->host);     /* TODO: "HOST" in some cases */
+	sep = appendConnAttribute(sep, conn_str, "PORT",     options->port);
+	sep = appendConnAttribute(sep, conn_str, "DATABASE", options->database);
+	sep = appendConnAttribute(sep, conn_str, "UID",      options->username); /* TODO: "USER" in some cases */
+	sep = appendConnAttribute(sep, conn_str, "PWD",      options->password); /* TODO: "PASSWORD" in some cases */
+	#ifdef DEBUG
+		elog(DEBUG1,"CONN STR: %s", conn_str->data);
+	#endif
 }
 
 /*

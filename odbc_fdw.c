@@ -66,22 +66,14 @@ PG_MODULE_MAGIC;
 
 typedef struct odbcFdwOptions
 {
-	/* ODBC common attributes */
-	char  *dsn;       /* Data Source Name */
-	char  *driver;    /* ODBC driver name */
-	char  *host;      /* server address (SERVER) */
-	char  *port;      /* server port  */
-	char  *database;  /* Database name */
-	char  *username;  /* Username (UID) */
-	char  *password;  /* Password (PWD) */
-
-	/* table specification */
 	char  *schema;     /* Foreign schema name */
 	char  *table;      /* Foreign table */
 	char  *prefix;     /* Prefix for imported foreign table names */
 	char  *sql_query;  /* SQL query (overrides table) */
 	char  *sql_count;  /* SQL query for counting results */
 	char  *encoding;   /* Character encoding name */
+
+	List *connection_list; /* ODBC connection attributes */
 
 	List  *mapping_list; /* Column name mapping */
 } odbcFdwOptions;
@@ -109,19 +101,19 @@ struct odbcFdwOption
 
 /*
  * Array of valid options
- *
+ * In addition to this, any option with a name prefixed
+ * by odbc_ is accepted as an ODBC connection attribute
+ * and can be defined in foreign servier, user mapping or
+ * table statements.
+ * Note that dsn and driver can be defined by
+ * prefixed or non-prefixed options.
  */
 static struct odbcFdwOption valid_options[] =
 {
 	/* Foreign server options */
 	{ "dsn",        ForeignServerRelationId },
 	{ "driver",     ForeignServerRelationId },
-	{ "host",       ForeignServerRelationId },
-	{ "port",       ForeignServerRelationId },
-	{ "database",   ForeignServerRelationId },
 	{ "encoding",   ForeignServerRelationId },
-	{ "username",   ForeignServerRelationId },
-	{ "password",   ForeignServerRelationId },
 
 	/* Foreign table options */
 	{ "schema",     ForeignTableRelationId },
@@ -129,10 +121,6 @@ static struct odbcFdwOption valid_options[] =
 	{ "prefix",     ForeignTableRelationId },
 	{ "sql_query",  ForeignTableRelationId },
 	{ "sql_count",  ForeignTableRelationId },
-
-	/* User mapping options */
-	{ "username",   UserMappingRelationId },
-	{ "password",   UserMappingRelationId },
 
 	/* Sentinel */
 	{ NULL,       InvalidOid}
@@ -167,7 +155,7 @@ List* odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid);
  */
 static bool odbcIsValidOption(const char *option, Oid context);
 static void check_return(SQLRETURN ret, char *msg, SQLHANDLE handle, SQLSMALLINT type);
-static char* empty_string_if_null(char *string);
+static const char* empty_string_if_null(char *string);
 static void extract_odbcFdwOptions(List *options_list, odbcFdwOptions *extracted_options);
 static void init_odbcFdwOptions(odbcFdwOptions* options);
 static void copy_odbcFdwOptions(odbcFdwOptions* to, odbcFdwOptions* from);
@@ -229,6 +217,38 @@ empty_string_if_null(char *string)
 	return string == NULL ? empty_string : string;
 }
 
+static const char odbc_attribute_prefix[] = "odbc_";
+static const int  odbc_attribute_prefix_len = sizeof(odbc_attribute_prefix) - 1; /*  strlen(odbc_attribute_prefix); */
+
+static bool
+is_odbc_attribute(const char* defname)
+{
+	return (strlen(defname) > odbc_attribute_prefix_len && strncmp(defname, odbc_attribute_prefix, odbc_attribute_prefix_len) == 0);
+}
+
+/* These ODBC attributes names are always uppercase */
+static const char *normalized_attributes[] = { "DRIVER", "DSN", "UID", "PWD" };
+static const char *normalized_attribute(const char* attribute_name)
+{
+	int i;
+	for (i=0; i < sizeof(normalized_attributes)/sizeof(normalized_attributes[0]); i++)
+	{
+		if (strcasecmp(attribute_name, normalized_attributes[i])==0)
+		{
+			attribute_name = normalized_attributes[i];
+			break;
+		}
+	}
+	return 	attribute_name;
+}
+
+static const char*
+get_odbc_attribute_name(const char* defname)
+{
+	int offset = is_odbc_attribute(defname) ? odbc_attribute_prefix_len : 0;
+	return normalized_attribute(defname + offset);
+}
+
 static void
 extract_odbcFdwOptions(List *options_list, odbcFdwOptions *extracted_options)
 {
@@ -248,31 +268,13 @@ extract_odbcFdwOptions(List *options_list, odbcFdwOptions *extracted_options)
 
 		if (strcmp(def->defname, "dsn") == 0)
 		{
-			extracted_options->dsn = defGetString(def);
+			extracted_options->connection_list = lappend(extracted_options->connection_list, def);
 			continue;
 		}
 
 		if (strcmp(def->defname, "driver") == 0)
 		{
-			extracted_options->driver = defGetString(def);
-			continue;
-		}
-
-		if (strcmp(def->defname, "host") == 0)
-		{
-			extracted_options->host = defGetString(def);
-			continue;
-		}
-
-		if (strcmp(def->defname, "port") == 0)
-		{
-			extracted_options->port = defGetString(def);
-			continue;
-		}
-
-		if (strcmp(def->defname, "database") == 0)
-		{
-			extracted_options->database = defGetString(def);
+			extracted_options->connection_list = lappend(extracted_options->connection_list, def);
 			continue;
 		}
 
@@ -306,21 +308,15 @@ extract_odbcFdwOptions(List *options_list, odbcFdwOptions *extracted_options)
 			continue;
 		}
 
-		if (strcmp(def->defname, "username") == 0)
-		{
-			extracted_options->username = defGetString(def);
-			continue;
-		}
-
-		if (strcmp(def->defname, "password") == 0)
-		{
-			extracted_options->password = defGetString(def);
-			continue;
-		}
-
 		if (strcmp(def->defname, "encoding") == 0)
 		{
 			extracted_options->encoding = defGetString(def);
+			continue;
+		}
+
+		if (is_odbc_attribute(def->defname))
+		{
+			extracted_options->connection_list = lappend(extracted_options->connection_list, def);
 			continue;
 		}
 
@@ -336,13 +332,7 @@ extract_odbcFdwOptions(List *options_list, odbcFdwOptions *extracted_options)
  */
 char* get_schema_name(odbcFdwOptions *options)
 {
-	char* schema_name = options->schema;
-	if (is_blank_string(schema_name))
-	{
-		/* TODO: this is just a MySQL convenience; should remove it? */
-		schema_name = options->database;
-	}
-	return schema_name;
+	return options->schema;
 }
 
 /*
@@ -379,11 +369,6 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
 {
 	List  *options_list = untransformRelOptions(PG_GETARG_DATUM(0));
 	Oid   catalog = PG_GETARG_OID(1);
-	char  *dsn          = NULL;
-	char  *driver       = NULL;
-	char  *svr_host     = NULL;
-	char  *svr_port     = NULL;
-	char  *svr_database = NULL;
 	char  *svr_schema   = NULL;
 	char  *svr_table    = NULL;
 	char  *svr_prefix   = NULL;
@@ -429,54 +414,9 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
 			        ));
 		}
 
+		/* TODO: detect redundant connection attributes and missing required attributs (dsn or driver)
 		/* Complain about redundent options */
-		if (strcmp(def->defname, "dsn") == 0)
-		{
-			if (!is_blank_string(dsn))
-				ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
-				                errmsg("conflicting or redundant options: dsn (%s)", defGetString(def))
-				               ));
-
-			dsn = defGetString(def);
-		}
-		else if (strcmp(def->defname, "driver") == 0)
-		{
-			if (!is_blank_string(driver))
-				ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
-				                errmsg("conflicting or redundant options: driver (%s)", defGetString(def))
-				               ));
-
-			driver = defGetString(def);
-		}
-		else if (strcmp(def->defname, "host") == 0)
-		{
-			if (!is_blank_string(svr_host))
-				ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
-				                errmsg("conflicting or redundant options: host (%s)", defGetString(def))
-				               ));
-
-			svr_host = defGetString(def);
-		}
-		else if (strcmp(def->defname, "port") == 0)
-		{
-			if (!is_blank_string(svr_port))
-				ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
-				                errmsg("conflicting or redundant options: port (%s)", defGetString(def))
-				               ));
-
-			svr_port = defGetString(def);
-		}
-		else if (strcmp(def->defname, "database") == 0)
-		{
-			if (!is_blank_string(svr_database))
-				ereport(ERROR,
-				        (errcode(ERRCODE_SYNTAX_ERROR),
-				         errmsg("conflicting or redundant options: database (%s)", defGetString(def))
-				        ));
-
-			svr_database = defGetString(def);
-		}
-		else if (strcmp(def->defname, "schema") == 0)
+		if (strcmp(def->defname, "schema") == 0)
 		{
 			if (!is_blank_string(svr_schema))
 				ereport(ERROR,
@@ -526,34 +466,7 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
 
 			sql_count = defGetString(def);
 		}
-		else if (strcmp(def->defname, "username") == 0)
-		{
-			if (!is_blank_string(username))
-				ereport(ERROR,
-				        (errcode(ERRCODE_SYNTAX_ERROR),
-				         errmsg("conflicting or redundant options: username (%s)", defGetString(def))
-				        ));
-
-			username = defGetString(def);
-		}
-		else if (strcmp(def->defname, "password") == 0)
-		{
-			if (!is_blank_string(password))
-				ereport(ERROR,
-				        (errcode(ERRCODE_SYNTAX_ERROR),
-				         errmsg("conflicting or redundant options: password (%s)", defGetString(def))
-				        ));
-
-			password = defGetString(def);
-		}
 	}
-
-	/* Complain about missing essential options: dsn */
-	if (is_blank_string(dsn) && is_blank_string(driver) && catalog == ForeignServerRelationId)
-		ereport(ERROR,
-		        (errcode(ERRCODE_SYNTAX_ERROR),
-		         errmsg("missing essential information: dsn (Database Source Name) or driver")
-		        ));
 
 	PG_RETURN_VOID();
 }
@@ -785,14 +698,15 @@ static bool appendConnAttribute(bool sep, StringInfoData *conn_str, const char* 
 static void odbcConnStr(StringInfoData *conn_str, odbcFdwOptions* options)
 {
 	bool sep = FALSE;
+	ListCell        *lc;
+
 	initStringInfo(conn_str);
-	sep = appendConnAttribute(sep, conn_str, "DSN",      options->dsn);
-	sep = appendConnAttribute(sep, conn_str, "DRIVER",   options->driver);
-	sep = appendConnAttribute(sep, conn_str, "SERVER",   options->host);     /* TODO: "HOST" in some cases */
-	sep = appendConnAttribute(sep, conn_str, "PORT",     options->port);
-	sep = appendConnAttribute(sep, conn_str, "DATABASE", options->database);
-	sep = appendConnAttribute(sep, conn_str, "UID",      options->username); /* TODO: "USER" in some cases */
-	sep = appendConnAttribute(sep, conn_str, "PWD",      options->password); /* TODO: "PASSWORD" in some cases */
+
+	foreach(lc, options->connection_list)
+	{
+		DefElem *def = (DefElem *) lfirst(lc);
+		sep = appendConnAttribute(sep, conn_str, get_odbc_attribute_name(def->defname), defGetString(def));
+	}
 	#ifdef DEBUG
 		elog(DEBUG1,"CONN STR: %s", conn_str->data);
 	#endif
@@ -1004,6 +918,12 @@ odbcIsValidOption(const char *option, Oid context)
 	{
 		if (context == opt->optcontext && strcmp(opt->optname, option) == 0)
 			return true;
+	}
+
+	/* ODBC attributes are valid in any context */
+	if (is_odbc_attribute(option))
+	{
+		return true;
 	}
 
 	/* Foreign table may have anything as a mapping option */
@@ -1626,13 +1546,16 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 	odbcGetOptions(serverOid, stmt->options, &options);
 
 	schema_name = get_schema_name(&options);
+	if (is_blank_string(schema_name))
+	{
+		schema_name = stmt->remote_schema;
+	}
 
 	if (!is_blank_string(options.sql_query))
 	{
 		/* Generate foreign table for a query */
 		if (is_blank_string(options.table))
 		{
-			/* TODO: error */
 			elog(ERROR, "Must provide 'table' option to name the foreign table");
 		}
 
@@ -1701,7 +1624,6 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 			check_return(ret, "Obtaining ODBC tables", tables_stmt, SQL_HANDLE_STMT);
 
 			initStringInfo(&col_str);
-			SQLCHAR *table_catalog = (SQLCHAR *) palloc(sizeof(SQLCHAR) * MAXIMUM_CATALOG_NAME_LEN);
 			SQLCHAR *table_schema = (SQLCHAR *) palloc(sizeof(SQLCHAR) * MAXIMUM_SCHEMA_NAME_LEN);
 			while (SQL_SUCCESS == ret)
 			{
@@ -1721,26 +1643,29 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 					   blank and different from the desired schema:
 					 */
 					ret = SQLGetData(tables_stmt, 2, SQL_C_CHAR, table_schema, MAXIMUM_SCHEMA_NAME_LEN, &indicator);
-					if (!is_blank_string(table_schema) && strcmp(table_schema, schema_name) )
+					if (SQL_SUCCESS == ret)
 					{
-						excluded = TRUE;
+						if (!is_blank_string(table_schema) && strcmp(table_schema, schema_name) )
+						{
+							excluded = TRUE;
+						}
+					}
+					else
+					{
+						/* Some drivers don't support schemas and may return an error code here;
+						 * in that case we must avoid using an schema to query the table columns.
+						 */
+						schema_name = NULL;
 					}
 
 					/* Since we haven't specified SQL_ALL_CATALOGS in the
 					   call to SQLTables we shouldn't get tables from special
 					   catalogs and only from the regular catalog of the database
-					   (named as the database or blank, depending on the driver)
-					   but to be sure we'll reject tables from catalogs with
-					   other names:
+					   (the catalog name is usually the name of the database or blank,
+					   but depends on the driver and may vary, and can be obtained with:
+					     SQLCHAR *table_catalog = (SQLCHAR *) palloc(sizeof(SQLCHAR) * MAXIMUM_CATALOG_NAME_LEN);
+					     SQLGetData(tables_stmt, 1, SQL_C_CHAR, table_catalog, MAXIMUM_CATALOG_NAME_LEN, &indicator);
 					 */
-					ret = SQLGetData(tables_stmt, 1, SQL_C_CHAR, table_catalog, MAXIMUM_CATALOG_NAME_LEN, &indicator);
-					if (!is_blank_string(table_catalog) && strcmp(table_catalog, schema_name))
-					{
-						if (is_blank_string(options.database) || strcmp(table_catalog, options.database))
-						{
-							excluded = TRUE;
-						}
-					}
 
 					/* And now we'll handle tables excluded by an EXCEPT clause */
 					if (!excluded && stmt->list_type == FDW_IMPORT_SCHEMA_EXCEPT)
@@ -1761,7 +1686,9 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 					}
 				}
 			}
+
 			SQLCloseCursor(tables_stmt);
+
 			SQLFreeHandle(SQL_HANDLE_STMT, tables_stmt);
 		}
 		else if (stmt->list_type == FDW_IMPORT_SCHEMA_LIMIT_TO)
@@ -1833,14 +1760,15 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 		// temporarily define vars here...
 		char *table_name = (char*)lfirst(tables_cell);
 		char *columns    = (char*)lfirst(table_columns_cell);
-
-		table_columns_cell = lnext(table_columns_cell);
         StringInfoData create_statement;
 		ListCell *option;
 		int option_count = 0;
-		char *prefix = empty_string_if_null(options.prefix);
+		const char *prefix = empty_string_if_null(options.prefix);
+
+		table_columns_cell = lnext(table_columns_cell);
+
 		initStringInfo(&create_statement);
-		appendStringInfo(&create_statement, "CREATE FOREIGN TABLE \"%s%s\" (", prefix, (char *) table_name);
+		appendStringInfo(&create_statement, "CREATE FOREIGN TABLE \"%s\".\"%s%s\" (", stmt->local_schema, prefix, (char *) table_name);
 		appendStringInfo(&create_statement, "%s", columns);
 		appendStringInfo(&create_statement, ") SERVER %s\n", stmt->server_name);
 		appendStringInfo(&create_statement, "OPTIONS (\n");

@@ -165,11 +165,13 @@ static void odbcGetOptions(Oid server_oid, List *add_options, odbcFdwOptions *ex
 static void odbcGetTableOptions(Oid foreigntableid, odbcFdwOptions *extracted_options);
 static void check_return(SQLRETURN ret, char *msg, SQLHANDLE handle, SQLSMALLINT type);
 static void odbcConnStr(StringInfoData *conn_str, odbcFdwOptions* options);
+static char* get_schema_name(odbcFdwOptions *options);
+static inline bool is_blank_string(const char *s);
 
 /*
  * Check if string pointer is NULL or points to empty string
  */
-inline bool is_blank_string(const char *s)
+static inline bool is_blank_string(const char *s)
 {
 	return s == NULL || s[0] == '\0';
 }
@@ -253,7 +255,6 @@ static void
 extract_odbcFdwOptions(List *options_list, odbcFdwOptions *extracted_options)
 {
 	ListCell        *lc;
-	List            *mapping_list;
 
 	#ifdef DEBUG
 		elog(DEBUG1, "extract_init_odbcFdwOptions");
@@ -330,7 +331,7 @@ extract_odbcFdwOptions(List *options_list, odbcFdwOptions *extracted_options)
 /*
  * Get the schema name from the options
  */
-char* get_schema_name(odbcFdwOptions *options)
+static char* get_schema_name(odbcFdwOptions *options)
 {
 	return options->schema;
 }
@@ -374,8 +375,6 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
 	char  *svr_prefix   = NULL;
 	char  *sql_query    = NULL;
 	char  *sql_count    = NULL;
-	char  *username     = NULL;
-	char  *password     = NULL;
 	ListCell *cell;
 
 	#ifdef DEBUG
@@ -415,7 +414,8 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
 		}
 
 		/* TODO: detect redundant connection attributes and missing required attributs (dsn or driver)
-		/* Complain about redundent options */
+		 * Complain about redundent options
+		 */
 		if (strcmp(def->defname, "schema") == 0)
 		{
 			if (!is_blank_string(svr_schema))
@@ -567,7 +567,6 @@ odbcGetOptions(Oid server_oid, List *add_options, odbcFdwOptions *extracted_opti
 	ForeignServer   *server;
 	UserMapping     *mapping;
 	List            *options;
-	ListCell        *lc;
 
 	#ifdef DEBUG
 		elog(DEBUG1, "odbcGetOptions");
@@ -591,7 +590,6 @@ static void
 odbcGetTableOptions(Oid foreigntableid, odbcFdwOptions *extracted_options)
 {
 	ForeignTable    *table;
-	ForeignServer   *server;
 
 	#ifdef DEBUG
 		elog(DEBUG1, "odbcGetTableOptions");
@@ -1242,7 +1240,6 @@ odbcIterateForeignScan(ForeignScanState *node)
 	StringInfoData  *table_columns = festate->table_columns;
 	List *col_position_mask = NIL;
 	List *col_size_array = NIL;
-	int encoding = 0;
 
 	#ifdef DEBUG
 		elog(DEBUG1, "odbcIterateForeignScan");
@@ -1269,14 +1266,6 @@ odbcIterateForeignScan(ForeignScanState *node)
 		bool found;
 
         StringInfoData sql_type;
-
-        SQLPOINTER      CharacterAttributePtr;
-        SQLSMALLINT     BufferLength;
-        SQLSMALLINT    ActualLengthPtr;
-        SQLULEN        NumericAttribute;
-		SQLCHAR *buffer;
-		BufferLength = 1024;
-		buffer = (SQLCHAR*)malloc( BufferLength*sizeof(char) );
 
 		/* Allocate memory for the masks in a memory context that
 		   persists between IterateForeignScan calls */
@@ -1609,6 +1598,8 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 		{
 			/* Will obtain the foreign tables with SQLTables() */
 
+			SQLCHAR *table_schema = (SQLCHAR *) palloc(sizeof(SQLCHAR) * MAXIMUM_SCHEMA_NAME_LEN);
+
 			odbc_connection(&options, &env, &dbc);
 
 			/* Allocate a statement handle */
@@ -1624,7 +1615,6 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 			check_return(ret, "Obtaining ODBC tables", tables_stmt, SQL_HANDLE_STMT);
 
 			initStringInfo(&col_str);
-			SQLCHAR *table_schema = (SQLCHAR *) palloc(sizeof(SQLCHAR) * MAXIMUM_SCHEMA_NAME_LEN);
 			while (SQL_SUCCESS == ret)
 			{
 				ret = SQLFetch(tables_stmt);
@@ -1645,7 +1635,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 					ret = SQLGetData(tables_stmt, 2, SQL_C_CHAR, table_schema, MAXIMUM_SCHEMA_NAME_LEN, &indicator);
 					if (SQL_SUCCESS == ret)
 					{
-						if (!is_blank_string(table_schema) && strcmp(table_schema, schema_name) )
+						if (!is_blank_string((char*)table_schema) && strcmp((char*)table_schema, schema_name) )
 						{
 							excluded = TRUE;
 						}
@@ -1673,7 +1663,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 						foreach(tables_cell,  stmt->table_list)
 						{
 							table_rangevar = (RangeVar*)lfirst(tables_cell);
-							if (strcmp(TableName, table_rangevar->relname) == 0)
+							if (strcmp((char*)TableName, table_rangevar->relname) == 0)
 							{
 								excluded = TRUE;
 							}

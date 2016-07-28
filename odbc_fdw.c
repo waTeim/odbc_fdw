@@ -689,7 +689,7 @@ static bool appendConnAttribute(bool sep, StringInfoData *conn_str, const char* 
 	{
 		if (sep)
 			appendStringInfoString(conn_str, sep_str);
-		appendStringInfo(conn_str, "%s={%s}", name, value);
+		appendStringInfo(conn_str, "%s=%s", name, value);
 		sep = TRUE;
 	}
 	return sep;

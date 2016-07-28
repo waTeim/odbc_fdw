@@ -49,7 +49,7 @@ option   | description
 
 Any other ODBC connection attribute is driver-dependent, and should be defined by
 an option named as the attribute prepended by the prefix `odbc_`.
-For example `odbc_SERVER`,   `odbc_PORT`, `odbc_UID`, `odbc_PWD`, etc.
+For example `odbc_server`,   `odbc_port`, `odbc_uid`, `odbc_pwd`, etc.
 
 The DSN and Driver can also be defined by the prefixed options
 `odbc_DSN`  and `odbc_DRIVER` repectively.
@@ -57,8 +57,25 @@ The DSN and Driver can also be defined by the prefixed options
 The odbc_ prefixed options can be defined either in the server, user mapping
 or foreign table statements.
 
-If an ODBC attribute other than 'DRIVER', 'DSN', 'UID', 'PWD' is case sensitive
-the option name will have to be quoted (with double quotes).
+If the ODBC driver requires case-sensitive attribute names, the
+`odbc_` option names will have to be quoted with double quotes (`""`),
+for example `OPTIONS ( "odbc_SERVER" '127.0.0.1' )`.
+Attributes `DSN`, `DRIVER`, `UID` and `PWD` are automatically uppercased
+and don't need quoting.
+
+If an ODBC attribute value contains special characters such as `=` or `;`
+it will require quoting with curly braces (`{}`), for example:
+for example `OPTIONS ( "odbc_PWD" '{xyz=abc}' )`.
+
+odbc_ option names may need to be quoted with "" if the driver
+requires case-sensitive names (otherwise the names are passed as lowercase,
+except for UID & PWD)
+odbc_ option values may need to be quoted with {} if they contain
+characters such as =; ...
+(but PG driver doesn't seem to support them)
+(the driver name and DNS should always support this quoting, since they aren't
+handled by the driver)
+
 
 Usually you'll want to define authentication-related attributes
 in a `CREATE USER MAPPING` statement, so that they are determined by
@@ -169,7 +186,6 @@ LIMITATIONS
   - SQL_TIME
   - SQL_TIMESTAMP
   - SQL_GUID
-* Option names are case-sensitive.
 * Foreign encodings are supported with the  `encoding` option
   for any enconding supported by PostgreSQL and compatible with the
   local database. The encoding must be identified with the

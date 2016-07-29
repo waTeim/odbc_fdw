@@ -47,20 +47,42 @@ option   | description
 `dsn`    | The Database Source Name of the foreign database system you're connecting to.
 `driver` | The name of the ODBC driver to use (needed if no dsn is used)
 
-These additional ODBC connection options are supported and can be defined
-either in the server or foreign table definition (or in an IMPORT FOREIGN SCHEMA statement):
+Any other ODBC connection attribute is driver-dependent, and should be defined by
+an option named as the attribute prepended by the prefix `odbc_`.
+For example `odbc_server`,   `odbc_port`, `odbc_uid`, `odbc_pwd`, etc.
 
-option     | description
----------- | -----------
-`host`     | The address (hostname or ip) of the database server.
-`port`     | The server port to connect to.
-`database` | The name of the database to query.
-`username` | The username to authenticate in the foreign server with.
-`password` | The password to authenticate in the foreign server with.
+The DSN and Driver can also be defined by the prefixed options
+`odbc_DSN`  and `odbc_DRIVER` repectively.
 
-The `username` and `password` options can also be defined
+The odbc_ prefixed options can be defined either in the server, user mapping
+or foreign table statements.
+
+If the ODBC driver requires case-sensitive attribute names, the
+`odbc_` option names will have to be quoted with double quotes (`""`),
+for example `OPTIONS ( "odbc_SERVER" '127.0.0.1' )`.
+Attributes `DSN`, `DRIVER`, `UID` and `PWD` are automatically uppercased
+and don't need quoting.
+
+If an ODBC attribute value contains special characters such as `=` or `;`
+it will require quoting with curly braces (`{}`), for example:
+for example `OPTIONS ( "odbc_PWD" '{xyz=abc}' )`.
+
+odbc_ option names may need to be quoted with "" if the driver
+requires case-sensitive names (otherwise the names are passed as lowercase,
+except for UID & PWD)
+odbc_ option values may need to be quoted with {} if they contain
+characters such as =; ...
+(but PG driver doesn't seem to support them)
+(the driver name and DNS should always support this quoting, since they aren't
+handled by the driver)
+
+
+Usually you'll want to define authentication-related attributes
 in a `CREATE USER MAPPING` statement, so that they are determined by
-the connected PostgreSQL role.
+the connected PostgreSQL role, but that's not a requirement: any attribute
+can be define in any of the statements; when a foreign table is access
+the SERVER, USER MAPPING and FOREIGN TABLE options will be combined
+to produce an ODBC connection string.
 
 The next options are used to define the table or query to connect a
 foreign table to. They should be defined either in `CREATE FOREIGN TABLE`
@@ -97,7 +119,7 @@ CREATE FOREIGN TABLE
   )
   SERVER odbc_server
   OPTIONS (
-    database 'myplace',
+    odbc_DATABASE 'myplace',
     schema 'test',
     sql_query 'select description,id,name,created_datetime,sd,users from `test`.`dblist`',
     sql_count 'select count(id) from `test`.`dblist`'
@@ -105,7 +127,7 @@ CREATE FOREIGN TABLE
 
 CREATE USER MAPPING FOR postgres
   SERVER odbc_server
-  OPTIONS (username 'root', password '');
+  OPTIONS (odbc_UID 'root', odbc_PWD '');
 ```
 
 Note that no DSN is required; we can define connection attributes,
@@ -115,8 +137,8 @@ including the name of the ODBC driver, individually:
 CREATE SERVER odbc_server
   FOREIGN DATA WRAPPER odbc_fdw
   OPTIONS (
-    driver 'MySQL',
-	host '192.168.1.17',
+    odbc_DRIVER 'MySQL',
+	odbc_SERVER '192.168.1.17',
 	encoding 'iso88591'
   );
 ```
@@ -132,7 +154,7 @@ IMPORT FOREIGN SCHEMA test
   FROM SERVER odbc_server
   INTO public
   OPTIONS (
-    database 'myplace',
+    odbc_DATABASE 'myplace',
     table 'odbc_table', -- this will be the name of the created foreign table
     sql_query 'select description,id,name,created_datetime,sd,users from `test`.`dblist`'
   );
@@ -164,15 +186,6 @@ LIMITATIONS
   - SQL_TIME
   - SQL_TIMESTAMP
   - SQL_GUID
-* Option names must be lower-case.
-* Only the ODBC connection attributes mentioned above can be provided via options:
-  - `DSN`
-  - `DRIVER`
-  - `UID` (`username` option)
-  - `PWD` (`password` option)
-  - `SERVER` (`host` option)
-  - `PORT`
-  - `DATABASE`
 * Foreign encodings are supported with the  `encoding` option
   for any enconding supported by PostgreSQL and compatible with the
   local database. The encoding must be identified with the

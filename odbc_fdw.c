@@ -558,6 +558,40 @@ sql_data_type(
 	};
 }
 
+static SQLULEN
+minimum_buffer_size(SQLSMALLINT odbc_data_type)
+{
+	switch(odbc_data_type)
+	{
+		case SQL_DECIMAL :
+		case SQL_NUMERIC :
+			return 32;
+		case SQL_INTEGER :
+			return 12;
+		case SQL_REAL :
+		case SQL_FLOAT :
+			return 18;
+		case SQL_DOUBLE :
+			return 26;
+		case SQL_SMALLINT :
+		case SQL_TINYINT :
+			return 6;
+		case SQL_BIGINT :
+			return 21;
+		case SQL_TYPE_DATE :
+		case SQL_DATE :
+			return 10;
+		case SQL_TYPE_TIME :
+		case SQL_TIME :
+			return 8;
+		case SQL_TYPE_TIMESTAMP :
+		case SQL_TIMESTAMP :
+			return 20;
+		default :
+			return 0;
+	};
+}
+
 /*
  * Fetch the options for a server and options list
  */
@@ -1295,8 +1329,12 @@ odbcIterateForeignScan(ForeignScanState *node)
 			{
 				if (strcmp(table_columns[k].data, (char *) ColumnName) == 0)
 				{
+					SQLULEN min_size = minimum_buffer_size(DataTypePtr);
 					found = TRUE;
 					col_position_mask = lappend_int(col_position_mask, k);
+					if (ColumnSizePtr < min_size)
+						ColumnSizePtr = min_size;
+
 					col_size_array = lappend_int(col_size_array, (int) ColumnSizePtr);
 					break;
 				}

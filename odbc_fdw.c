@@ -89,6 +89,7 @@ typedef struct odbcFdwExecutionState
 	bool            first_iteration;
 	List            *col_position_mask;
 	List            *col_size_array;
+	List            *col_conversion_array;
 	char            *sql_count;
 	int             encoding;
 } odbcFdwExecutionState;
@@ -125,6 +126,8 @@ static struct odbcFdwOption valid_options[] =
 	/* Sentinel */
 	{ NULL,       InvalidOid}
 };
+
+typedef enum { TEXT_CONVERSION, HEX_CONVERSION, BIN_CONVERSION, BOOL_CONVERSION } ColumnConversion;
 
 /*
  * SQL functions
@@ -524,7 +527,13 @@ sql_data_type(
 		   appendStringInfo(sql_type, "float8");
 			break;
 		case SQL_BIT :
-		    appendStringInfo(sql_type, "bit(1)");
+			/* Use boolean instead of bit(1) because:
+			 * * binary types are not yet fully supported
+			 * * boolean is more commonly used in PG
+			 * * With options BoolsAsChar=0 this allows
+			 *   preserving boolean columns from pSQL ODBC.
+			 */
+		    appendStringInfo(sql_type, "boolean");
 			break;
 		case SQL_SMALLINT :
 		case SQL_TINYINT :
@@ -533,12 +542,14 @@ sql_data_type(
 		case SQL_BIGINT :
 			appendStringInfo(sql_type, "bigint");
 			break;
+		/*
 		case SQL_BINARY :
 		    appendStringInfo(sql_type, "bit(%u)", (unsigned)column_size);
 			break;
 		case SQL_VARBINARY :
 		    appendStringInfo(sql_type, "varbit(%u)", (unsigned)column_size);
 			break;
+		*/
 		case SQL_LONGVARBINARY :
 			appendStringInfo(sql_type, "bytea");
 			break;
@@ -557,11 +568,6 @@ sql_data_type(
 		case SQL_GUID :
 			appendStringInfo(sql_type, "uuid");
 			break;
-		default :
-			ereport(ERROR,
-			        (errcode(ERRCODE_FDW_INVALID_DATA_TYPE),
-			         errmsg("Data type not supported, code %d", odbc_data_type)
-			        ));
 	};
 }
 
@@ -1281,6 +1287,7 @@ odbcIterateForeignScan(ForeignScanState *node)
 	StringInfoData  *table_columns = festate->table_columns;
 	List *col_position_mask = NIL;
 	List *col_size_array = NIL;
+	List *col_conversion_array = NIL;
 
 	#ifdef DEBUG
 		elog(DEBUG1, "odbcIterateForeignScan");
@@ -1313,10 +1320,12 @@ odbcIterateForeignScan(ForeignScanState *node)
 		prev_context = MemoryContextSwitchTo(executor_state->es_query_cxt);
 		col_position_mask = NIL;
 		col_size_array = NIL;
+		col_conversion_array = NIL;
 		num_of_result_cols = columns;
 		/* Obtain the column information of the first row. */
 		for (i = 1; i <= columns; i++)
 		{
+			ColumnConversion conversion = TEXT_CONVERSION;
 			found = FALSE;
 			ColumnName = (SQLCHAR *) palloc(sizeof(SQLCHAR) * MAXIMUM_COLUMN_NAME_LEN);
 			SQLDescribeCol(stmt,
@@ -1330,6 +1339,18 @@ odbcIterateForeignScan(ForeignScanState *node)
 			               &NullablePtr);
 
 			sql_data_type(DataTypePtr, ColumnSizePtr, DecimalDigitsPtr, NullablePtr, &sql_type);
+			if (strcmp("bytea", (char*)sql_type.data) == 0)
+			{
+				conversion = HEX_CONVERSION;
+			}
+			if (strcmp("boolean", (char*)sql_type.data) == 0)
+			{
+				conversion = BOOL_CONVERSION;
+			}
+			else if (strncmp("bit(",(char*)sql_type.data,4)==0 || strncmp("varbit(",(char*)sql_type.data,7)==0)
+			{
+				conversion = BIN_CONVERSION;
+			}
 
 			/* Get the position of the column in the FDW table */
 			for (k=0; k<num_of_table_cols; k++)
@@ -1346,6 +1367,7 @@ odbcIterateForeignScan(ForeignScanState *node)
 						ColumnSizePtr = max_size;
 
 					col_size_array = lappend_int(col_size_array, (int) ColumnSizePtr);
+					col_conversion_array = lappend_int(col_conversion_array, (int) conversion);
 					break;
 				}
 			}
@@ -1354,12 +1376,14 @@ odbcIterateForeignScan(ForeignScanState *node)
 			{
 				col_position_mask = lappend_int(col_position_mask, -1);
 				col_size_array = lappend_int(col_size_array, -1);
+				col_conversion_array = lappend_int(col_conversion_array, 0);
 			}
 			pfree(ColumnName);
 		}
 		festate->num_of_result_cols = num_of_result_cols;
 		festate->col_position_mask = col_position_mask;
 		festate->col_size_array = col_size_array;
+		festate->col_conversion_array = col_conversion_array;
 		festate->first_iteration = FALSE;
 
 		MemoryContextSwitchTo(prev_context);
@@ -1369,6 +1393,7 @@ odbcIterateForeignScan(ForeignScanState *node)
 		num_of_result_cols = festate->num_of_result_cols;
 		col_position_mask = festate->col_position_mask;
 		col_size_array = festate->col_size_array;
+		col_conversion_array = festate->col_conversion_array;
 	}
 
 	ExecClearTuple(slot);
@@ -1382,10 +1407,12 @@ odbcIterateForeignScan(ForeignScanState *node)
 		{
 			SQLLEN indicator;
 			char * buf;
+			size_t buf_used;
 
 			int mask_index = i - 1;
 			int col_size = list_nth_int(col_size_array, mask_index);
 			int mapped_pos = list_nth_int(col_position_mask, mask_index);
+			ColumnConversion conversion = list_nth_int(col_conversion_array, mask_index);
 
 			/* Ignore this column if position is marked as invalid */
 			if (mapped_pos == -1)
@@ -1407,8 +1434,10 @@ odbcIterateForeignScan(ForeignScanState *node)
 			   And finally, SQL_C_NUMERIC and SQL_C_GUID could also be used.
 			*/
 			buf[0] = 0;
+			buf_used = 0;
 			ret = SQLGetData(stmt, i, SQL_C_CHAR,
 							 buf, sizeof(char) * (col_size+1), &indicator);
+			buf_used = indicator;
 
 			if (ret == SQL_SUCCESS_WITH_INFO)
 			{
@@ -1482,6 +1511,7 @@ odbcIterateForeignScan(ForeignScanState *node)
 					}
 					pfree(buf);
 					buf = accum_buffer;
+					buf_used = accum_used;
 				}
 			}
 
@@ -1501,7 +1531,25 @@ odbcIterateForeignScan(ForeignScanState *node)
 						buf = pg_any_to_server(buf, strlen(buf), festate->encoding);
 					}
 				 	initStringInfo(&col_data);
-				 	appendStringInfoString (&col_data, buf);
+					if (conversion == HEX_CONVERSION)
+					{
+						appendStringInfoString (&col_data, "\\x");
+					}
+					if (conversion == BOOL_CONVERSION)
+					{
+						if (buf[0] == 0)
+							strcpy(buf, "F");
+						else if (buf[0] == 1)
+							strcpy(buf, "T");
+					}
+					if (conversion == BIN_CONVERSION)
+					{
+						ereport(ERROR,
+						        (errcode(ERRCODE_FDW_INVALID_DATA_TYPE),
+						         errmsg("Bit string columns are not supported")
+						        ));
+					}
+					appendStringInfoString (&col_data, buf);
 
 					values[mapped_pos] = col_data.data;
 				}
@@ -1699,6 +1747,11 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 			               &Nullable);
 
 			sql_data_type(DataType, ColumnSize, DecimalDigits, Nullable, &sql_type);
+			if (is_blank_string(sql_type.data))
+				{
+					elog(NOTICE, "Data type not supported (%d) for column %s", DataType, ColumnName);
+					continue;
+				}
 			if (i > 1)
 			{
 				appendStringInfo(&col_str, ", ");
@@ -1843,10 +1896,6 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 				ret = SQLFetch(columns_stmt);
 				if (SQL_SUCCESS == ret)
 				{
-					if (++i > 1)
-					{
-						appendStringInfo(&col_str, ", ");
-					}
 					ret = SQLGetData(columns_stmt, 4, SQL_C_CHAR, ColumnName, MAXIMUM_COLUMN_NAME_LEN, &indicator);
 					// check_return(ret, "Reading column name", columns_stmt, SQL_HANDLE_STMT);
 					ret = SQLGetData(columns_stmt, 5, SQL_C_SSHORT, &DataType, MAXIMUM_COLUMN_NAME_LEN, &indicator);
@@ -1858,6 +1907,15 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 					ret = SQLGetData(columns_stmt, 11, SQL_C_SSHORT, &Nullable, 0, &indicator);
 					// check_return(ret, "Reading column nullable", columns_stmt, SQL_HANDLE_STMT);
 					sql_data_type(DataType, ColumnSize, DecimalDigits, Nullable, &sql_type);
+					if (is_blank_string(sql_type.data))
+						{
+							elog(NOTICE, "Data type not supported (%d) for column %s", DataType, ColumnName);
+							continue;
+						}
+					if (++i > 1)
+					{
+						appendStringInfo(&col_str, ", ");
+					}
 					appendStringInfo(&col_str, "\"%s\" %s", ColumnName, (char *) sql_type.data);
 				}
 			}

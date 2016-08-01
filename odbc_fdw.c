@@ -492,7 +492,14 @@ sql_data_type(
 			break;
 		case SQL_VARCHAR :
 		case SQL_WVARCHAR :
-			appendStringInfo(sql_type, "varchar(%u)", (unsigned)column_size);
+			if (column_size <= 255)
+			{
+				appendStringInfo(sql_type, "varchar(%u)", (unsigned)column_size);
+			}
+			else
+			{
+				appendStringInfo(sql_type, "text");
+			}
 			break;
 		case SQL_LONGVARCHAR :
 		case SQL_WLONGVARCHAR :
@@ -1330,10 +1337,13 @@ odbcIterateForeignScan(ForeignScanState *node)
 				if (strcmp(table_columns[k].data, (char *) ColumnName) == 0)
 				{
 					SQLULEN min_size = minimum_buffer_size(DataTypePtr);
+					SQLULEN max_size = 8192;
 					found = TRUE;
 					col_position_mask = lappend_int(col_position_mask, k);
 					if (ColumnSizePtr < min_size)
 						ColumnSizePtr = min_size;
+					if (ColumnSizePtr > max_size)
+						ColumnSizePtr = max_size;
 
 					col_size_array = lappend_int(col_size_array, (int) ColumnSizePtr);
 					break;

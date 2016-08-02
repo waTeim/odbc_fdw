@@ -64,6 +64,10 @@ PG_MODULE_MAGIC;
 #define MAXIMUM_TABLE_NAME_LEN 255
 #define MAXIMUM_COLUMN_NAME_LEN 255
 
+/* Maximum GetData buffer size */
+#define MAXIMUM_BUFFER_SIZE 8192
+
+#define ODBC_SQLSTATE_FRACTIONAL_TRUNCATION "01S07"
 typedef struct odbcFdwOptions
 {
 	char  *schema;     /* Foreign schema name */
@@ -1358,7 +1362,7 @@ odbcIterateForeignScan(ForeignScanState *node)
 				if (strcmp(table_columns[k].data, (char *) ColumnName) == 0)
 				{
 					SQLULEN min_size = minimum_buffer_size(DataTypePtr);
-					SQLULEN max_size = 8192;
+					SQLULEN max_size = MAXIMUM_BUFFER_SIZE;
 					found = TRUE;
 					col_position_mask = lappend_int(col_position_mask, k);
 					if (ColumnSizePtr < min_size)
@@ -1443,7 +1447,7 @@ odbcIterateForeignScan(ForeignScanState *node)
 			{
 				SQLCHAR sqlstate[5];
 				SQLGetDiagRec(SQL_HANDLE_STMT, stmt, 1, sqlstate, NULL, NULL, 0, NULL);
-				if (strcmp((char*)sqlstate, "01S07") == 0)
+				if (strcmp((char*)sqlstate, ODBC_SQLSTATE_FRACTIONAL_TRUNCATION) == 0)
 				{
 					/* Fractional truncation has occured;
 					 * at this point we cannot obtain the lost digits

@@ -1535,25 +1535,29 @@ odbcIterateForeignScan(ForeignScanState *node)
 						buf = pg_any_to_server(buf, strlen(buf), festate->encoding);
 					}
 				 	initStringInfo(&col_data);
-					if (conversion == HEX_CONVERSION)
+					switch (conversion)
 					{
-						appendStringInfoString (&col_data, "\\x");
+						case TEXT_CONVERSION :
+							appendStringInfoString (&col_data, buf);
+							break;
+						case HEX_CONVERSION :
+							appendStringInfoString (&col_data, "\\x");
+							appendStringInfoString (&col_data, buf);
+							break;
+						case BOOL_CONVERSION :
+							if (buf[0] == 0)
+								strcpy(buf, "F");
+							else if (buf[0] == 1)
+								strcpy(buf, "T");
+							appendStringInfoString (&col_data, buf);
+							break;
+						case BIN_CONVERSION :
+							ereport(ERROR,
+							        (errcode(ERRCODE_FDW_INVALID_DATA_TYPE),
+							         errmsg("Bit string columns are not supported")
+							        ));
+							break;
 					}
-					if (conversion == BOOL_CONVERSION)
-					{
-						if (buf[0] == 0)
-							strcpy(buf, "F");
-						else if (buf[0] == 1)
-							strcpy(buf, "T");
-					}
-					if (conversion == BIN_CONVERSION)
-					{
-						ereport(ERROR,
-						        (errcode(ERRCODE_FDW_INVALID_DATA_TYPE),
-						         errmsg("Bit string columns are not supported")
-						        ));
-					}
-					appendStringInfoString (&col_data, buf);
 
 					values[mapped_pos] = col_data.data;
 				}

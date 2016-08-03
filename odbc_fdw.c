@@ -547,6 +547,8 @@ sql_data_type(
 			appendStringInfo(sql_type, "bigint");
 			break;
 		/*
+		 * TODO: Implement these cases properly. See #23
+		 *
 		case SQL_BINARY :
 			appendStringInfo(sql_type, "bit(%u)", (unsigned)column_size);
 			break;

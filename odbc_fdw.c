@@ -510,16 +510,16 @@ sql_data_type(
 			break;
 		case SQL_LONGVARCHAR :
 		case SQL_WLONGVARCHAR :
-		    appendStringInfo(sql_type, "text");
+			appendStringInfo(sql_type, "text");
 			break;
 		case SQL_DECIMAL :
 			appendStringInfo(sql_type, "decimal(%u,%d)", (unsigned)column_size, decimal_digits);
-		    break;
+			break;
 		case SQL_NUMERIC :
 			appendStringInfo(sql_type, "numeric(%u,%d)", (unsigned)column_size, decimal_digits);
 			break;
 		case SQL_INTEGER :
-		    appendStringInfo(sql_type, "integer");
+			appendStringInfo(sql_type, "integer");
 			break;
 		case SQL_REAL :
 			appendStringInfo(sql_type, "real");
@@ -537,7 +537,7 @@ sql_data_type(
 			 * * With options BoolsAsChar=0 this allows
 			 *   preserving boolean columns from pSQL ODBC.
 			 */
-		    appendStringInfo(sql_type, "boolean");
+			appendStringInfo(sql_type, "boolean");
 			break;
 		case SQL_SMALLINT :
 		case SQL_TINYINT :
@@ -548,10 +548,10 @@ sql_data_type(
 			break;
 		/*
 		case SQL_BINARY :
-		    appendStringInfo(sql_type, "bit(%u)", (unsigned)column_size);
+			appendStringInfo(sql_type, "bit(%u)", (unsigned)column_size);
 			break;
 		case SQL_VARBINARY :
-		    appendStringInfo(sql_type, "varbit(%u)", (unsigned)column_size);
+			appendStringInfo(sql_type, "varbit(%u)", (unsigned)column_size);
 			break;
 		*/
 		case SQL_LONGVARBINARY :
@@ -563,7 +563,7 @@ sql_data_type(
 			break;
 		case SQL_TYPE_TIME :
 		case SQL_TIME :
-		    appendStringInfo(sql_type, "time");
+			appendStringInfo(sql_type, "time");
 			break;
 		case SQL_TYPE_TIMESTAMP :
 		case SQL_TIMESTAMP :

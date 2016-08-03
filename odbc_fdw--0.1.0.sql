@@ -10,7 +10,7 @@
  * Original author: Zheng Yang <zhengyang4k@gmail.com>
  *
  * IDENTIFICATION
- *                odbc_fdw/odbc_fdw--0.0.1.sql
+ *                odbc_fdw/odbc_fdw--0.1.0.sql
  *
  *-------------------------------------------------------------------------
  */

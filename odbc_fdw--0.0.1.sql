@@ -7,7 +7,7 @@
  *
  * This software is released under the PostgreSQL Licence
  *
- * Author: Zheng Yang <zhengyang4k@gmail.com>
+ * Original author: Zheng Yang <zhengyang4k@gmail.com>
  *
  * IDENTIFICATION
  *                odbc_fdw/odbc_fdw--0.0.1.sql

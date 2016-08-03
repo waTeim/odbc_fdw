@@ -17,7 +17,10 @@ MODULE_big = odbc_fdw
 OBJS = odbc_fdw.o
 
 EXTENSION = odbc_fdw
-DATA = odbc_fdw--0.0.1.sql
+DATA = odbc_fdw--0.0.1.sql \
+  odbc_fdw--0.1.0.sql \
+  odbc_fdw--0.0.1--0.1.0.sql \
+  odbc_fdw--0.1.0--0.0.1.sql
 
 REGRESS = odbc_fdw
 

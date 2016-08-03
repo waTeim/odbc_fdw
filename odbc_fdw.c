@@ -68,6 +68,7 @@ PG_MODULE_MAGIC;
 #define MAXIMUM_BUFFER_SIZE 8192
 
 #define ODBC_SQLSTATE_FRACTIONAL_TRUNCATION "01S07"
+
 typedef struct odbcFdwOptions
 {
 	char  *schema;     /* Foreign schema name */
@@ -1267,6 +1268,131 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 	node->fdw_state = (void *) festate;
 }
 
+/* Read the value of a field of the currently fetched row in a statement
+ * Returns FALSE if the operation fails
+ * The data is stored in a buffer allocated with palloc and its address assigned
+ * to the pointer pointed to by data. The number of bytes read is stored
+ * in the value pointed to by data_size if it is not NULL.
+ * For NULL values the buffer pointer becomes NULL;
+ */
+static bool
+read_field(SQLHSTMT stmt, int column_number, int col_size, char **data, size_t *data_size)
+{
+	SQLLEN indicator;
+	char * buf;
+	size_t buf_used;
+	SQLRETURN ret;
+
+	buf = (char *) palloc(sizeof(char) * (col_size+1));
+
+	/* retrieve column data as a zero-terminated string */
+	/* TODO:
+	   binary fields (SQL_C_BIT, SQL_C_BINARY) do not have
+	   a trailing zero; they should be copied as now but without
+	   adding 1 to col_size, or using SQL_C_BIT or SQL_C_BINARY
+	   and then encoded into a binary PG literal (e.g. X'...'
+	   or B'...')
+	   For floating point types we should use SQL_C_FLOAT/SQL_C_DOUBLE
+	   to avoid precision loss.
+	   For date/time/timestamp these structures can be used:
+	   SQL_C_TYPE_DATE/SQL_C_TYPE_TIME/SQL_C_TYPE_TIMESTAMP.
+	   And finally, SQL_C_NUMERIC and SQL_C_GUID could also be used.
+	*/
+	buf[0] = 0;
+	buf_used = 0;
+	ret = SQLGetData(stmt, column_number, SQL_C_CHAR,
+					 buf, sizeof(char) * (col_size+1), &indicator);
+	buf_used = indicator;
+
+	if (ret == SQL_SUCCESS_WITH_INFO)
+	{
+		SQLCHAR sqlstate[5];
+		SQLGetDiagRec(SQL_HANDLE_STMT, stmt, 1, sqlstate, NULL, NULL, 0, NULL);
+		if (strcmp((char*)sqlstate, ODBC_SQLSTATE_FRACTIONAL_TRUNCATION) == 0)
+		{
+			/* Fractional truncation has occured;
+			 * at this point we cannot obtain the lost digits
+			 */
+			if (buf[col_size])
+			{
+				/* The driver has omitted the trailing */
+				char *buf2 = (char *) palloc(sizeof(char) * (col_size+2));
+				strncpy(buf2, buf, col_size+1);
+				buf2[col_size+1] = 0;
+				pfree(buf);
+				buf = buf2;
+			}
+			elog(NOTICE,"Truncating number: %s",buf);
+		}
+		else
+		{
+			/* The output is incomplete, we need to obtain the rest of the data */
+			char* accum_buffer;
+			size_t accum_buffer_size;
+			size_t accum_used;
+			if (indicator == SQL_NO_TOTAL)
+			{
+				/* Unknown total size, must copy part by part */
+				accum_buffer_size = 0;
+				accum_buffer = NULL;
+				accum_used = 0;
+				while (1)
+				{
+					size_t buf_len = buf[col_size] ? col_size + 1 : col_size;
+					// Allocate new accumulation buffer if necessary
+					if (accum_used + buf_len > accum_buffer_size)
+					{
+						char *new_buff;
+						accum_buffer_size = accum_buffer_size == 0 ? col_size*2 : accum_buffer_size*2;
+						new_buff = (char *) palloc(sizeof(char) * (accum_buffer_size+1));
+						if (accum_buffer)
+						{
+							memmove(new_buff, accum_buffer, accum_used);
+							pfree(accum_buffer);
+						}
+						accum_buffer = new_buff;
+						accum_buffer[accum_used] = 0;
+					}
+					// Copy part to the accumulation buffer
+					strncpy(accum_buffer+accum_used, buf, buf_len);
+					accum_used += buf_len;
+					accum_buffer[accum_used] = 0;
+					// Get new part
+					if (ret != SQL_SUCCESS_WITH_INFO)
+					  break;
+					ret = SQLGetData(stmt, column_number, SQL_C_CHAR, buf, sizeof(char) * (col_size+1), &indicator);
+				};
+
+			}
+			else
+			{
+				/* We need to retrieve indicator more characters */
+				size_t buf_len = buf[col_size] ? col_size + 1 : col_size;
+				accum_buffer_size = buf_len + indicator;
+				accum_buffer = (char *) palloc(sizeof(char) * (accum_buffer_size+1));
+				strncpy(accum_buffer, buf, buf_len);
+				accum_buffer[buf_len] = 0;
+				ret = SQLGetData(stmt, column_number, SQL_C_CHAR, accum_buffer+buf_len, sizeof(char) * (indicator+1), &indicator);
+			}
+			pfree(buf);
+			buf = accum_buffer;
+			buf_used = accum_used;
+		}
+	}
+
+    if (indicator == SQL_NULL_DATA)
+	{
+		pfree(buf);
+		buf = NULL;
+		buf_used = 0;
+	}
+	*data = buf;
+	if (data_size)
+		*data_size = buf_used;
+
+	return SQL_SUCCEEDED(ret);
+}
+
 /*
  * odbcIterateForeignScan
  *
@@ -1409,9 +1535,7 @@ odbcIterateForeignScan(ForeignScanState *node)
 		/* Loop through the columns */
 		for (i = 1; i <= columns; i++)
 		{
-			SQLLEN indicator;
 			char * buf;
-			size_t buf_used;
 
 			int mask_index = i - 1;
 			int col_size = list_nth_int(col_size_array, mask_index);
@@ -1422,107 +1546,10 @@ odbcIterateForeignScan(ForeignScanState *node)
 			if (mapped_pos == -1)
 				continue;
 
-			buf = (char *) palloc(sizeof(char) * (col_size+1));
-
-			/* retrieve column data as a zero-terminated string */
-			/* TODO:
-			   binary fields (SQL_C_BIT, SQL_C_BINARY) do not have
-			   a trailing zero; they should be copied as now but without
-			   adding 1 to col_size, or using SQL_C_BIT or SQL_C_BINARY
-			   and then encoded into a binary PG literal (e.g. X'...'
-			   or B'...')
-			   For floating point types we should use SQL_C_FLOAT/SQL_C_DOUBLE
-			   to avoid precision loss.
-			   For date/time/timestamp these structures can be used:
-			   SQL_C_TYPE_DATE/SQL_C_TYPE_TIME/SQL_C_TYPE_TIMESTAMP.
-			   And finally, SQL_C_NUMERIC and SQL_C_GUID could also be used.
-			*/
-			buf[0] = 0;
-			buf_used = 0;
-			ret = SQLGetData(stmt, i, SQL_C_CHAR,
-							 buf, sizeof(char) * (col_size+1), &indicator);
-			buf_used = indicator;
-
-			if (ret == SQL_SUCCESS_WITH_INFO)
-			{
-				SQLCHAR sqlstate[5];
-				SQLGetDiagRec(SQL_HANDLE_STMT, stmt, 1, sqlstate, NULL, NULL, 0, NULL);
-				if (strcmp((char*)sqlstate, ODBC_SQLSTATE_FRACTIONAL_TRUNCATION) == 0)
-				{
-					/* Fractional truncation has occured;
-					 * at this point we cannot obtain the lost digits
-					 */
-					if (buf[col_size])
-					{
-						/* The driver has omitted the trailing */
-						char *buf2 = (char *) palloc(sizeof(char) * (col_size+2));
-						strncpy(buf2, buf, col_size+1);
-						buf2[col_size+1] = 0;
-						pfree(buf);
-						buf = buf2;
-					}
-					elog(NOTICE,"Truncating number: %s",buf);
-				}
-				else
-				{
-					/* The output is incomplete, we need to obtain the rest of the data */
-					char* accum_buffer;
-					size_t accum_buffer_size;
-					size_t accum_used;
-					if (indicator == SQL_NO_TOTAL)
-					{
-						/* Unknown total size, must copy part by part */
-						accum_buffer_size = 0;
-						accum_buffer = NULL;
-						accum_used = 0;
-						while (1)
-						{
-							size_t buf_len = buf[col_size] ? col_size + 1 : col_size;
-							// Allocate new accumulation buffer if necessary
-							if (accum_used + buf_len > accum_buffer_size)
-							{
-								char *new_buff;
-								accum_buffer_size = accum_buffer_size == 0 ? col_size*2 : accum_buffer_size*2;
-								new_buff = (char *) palloc(sizeof(char) * (accum_buffer_size+1));
-								if (accum_buffer)
-								{
-									memmove(new_buff, accum_buffer, accum_used);
-									pfree(accum_buffer);
-								}
-								accum_buffer = new_buff;
-								accum_buffer[accum_used] = 0;
-							}
-							// Copy part to the accumulation buffer
-							strncpy(accum_buffer+accum_used, buf, buf_len);
-							accum_used += buf_len;
-							accum_buffer[accum_used] = 0;
-							// Get new part
-							if (ret != SQL_SUCCESS_WITH_INFO)
-							  break;
-							ret = SQLGetData(stmt, i, SQL_C_CHAR, buf, sizeof(char) * (col_size+1), &indicator);
-						};
-
-					}
-					else
-					{
-						/* We need to retrieve indicator more characters */
-						size_t buf_len = buf[col_size] ? col_size + 1 : col_size;
-						accum_buffer_size = buf_len + indicator;
-						accum_buffer = (char *) palloc(sizeof(char) * (accum_buffer_size+1));
-						strncpy(accum_buffer, buf, buf_len);
-						accum_buffer[buf_len] = 0;
-						ret = SQLGetData(stmt, i, SQL_C_CHAR, accum_buffer+buf_len, sizeof(char) * (indicator+1), &indicator);
-					}
-					pfree(buf);
-					buf = accum_buffer;
-					buf_used = accum_used;
-				}
-			}
-
-			if (SQL_SUCCEEDED(ret))
+			if (read_field(stmt, i, col_size, &buf, NULL))
 			{
 				/* Handle null columns */
-				if (indicator == SQL_NULL_DATA)
+				if (buf == NULL)
 				{
 				  // BuildTupleFromCStrings expects NULLs to be NULL pointers
 				  values[mapped_pos] = NULL;
@@ -1557,12 +1584,31 @@ odbcIterateForeignScan(ForeignScanState *node)
 							         errmsg("Bit string columns are not supported")
 							        ));
 							break;
+							//	bit requires exact size, so except for multiples of 8
+							// this has to be replaced by a binary string prefixed by "b"
+							// 	size_t hex_size = 2*buf_used;
+							// 	char *hex_buffer = (char *) palloc(sizeof(char) * (hex_size+1));
+							// 	int char_index;
+							// 	appendStringInfoString (&col_data, "x");
+							// 	for (char_index = 0; char_index < buf_used; char_index++)
+							// 	{
+							// 		if (char_index == 0 && buf[char_index] < 16)
+							// 		{
+							// 			sprintf(hex_buffer + char_index*2, "%2X", buf[char_index]);
+							// 			hex_size--;
+							// 		}
+							// 		else
+							// 			sprintf(hex_buffer + char_index*2, "%02X", buf[char_index]);
+							// 	}
+							// 	hex_buffer[hex_size] = 0;
+							// 	pfree(buf);
+							// 	buf = hex_buffer;
 					}
 
 					values[mapped_pos] = col_data.data;
 				}
+				pfree(buf);
 			}
-			pfree(buf);
 		}
 
 		tuple = BuildTupleFromCStrings(festate->attinmeta, values);

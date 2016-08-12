@@ -1,0 +1,5 @@
+SELECT * FROM odbc_test_table;
+ id |   name    |    description    | users |       createdtime        
+----+-----------+-------------------+-------+--------------------------
+  1 | test name | sdklfjslkdfjlskdf |   100 | Fri Aug 12 00:00:00 2016
+(1 row)

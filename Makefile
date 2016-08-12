@@ -22,7 +22,9 @@ DATA = odbc_fdw--0.0.1.sql \
   odbc_fdw--0.0.1--0.1.0.sql \
   odbc_fdw--0.1.0--0.0.1.sql
 
-REGRESS = odbc_fdw
+REGRESS = $(notdir $(basename $(sort $(wildcard test/sql/*test.sql))))
+TEST_DIR = test/
+REGRESS_OPTS = --inputdir='$(TEST_DIR)' --outputdir='$(TEST_DIR)' --user='postgres'
 
 SHLIB_LINK = -lodbc
 
@@ -33,3 +35,7 @@ endif
 PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
+
+run_test:
+	# Here should go the parser to change the template values for config values
+	make installcheck

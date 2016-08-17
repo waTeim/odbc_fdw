@@ -1,6 +1,0 @@
-mysql:
-    host: host_example
-    dbname: dname_example
-    encoding: iso88591
-    user: user_example
-    password: password_example

@@ -1,6 +1,9 @@
 # Generated subdirectories
-/results/
+.DS_Store
+test/results/
 **/*.o
 **/*.so
-regression.diffs
-regression.out
+test/regression.diffs
+test/regression.out
+test/sql/*_connector_installation*
+test/expected/*_connector_installation*

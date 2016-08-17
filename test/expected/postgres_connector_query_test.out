@@ -1,0 +1,10 @@
+SELECT * FROM postgres_test_table;
+--
+(0 rows)
+
+SELECT * FROM query_postgres_test_table;
+ count 
+-------
+     0
+(1 row)
+

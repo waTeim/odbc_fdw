@@ -3,6 +3,7 @@
 #                foreign-data wrapper for ODBC
 #
 # Copyright (c) 2011, PostgreSQL Global Development Group
+# Copyright (c) 2016, CARTO
 #
 # This software is released under the PostgreSQL Licence
 #
@@ -10,7 +11,7 @@
 #
 # IDENTIFICATION
 #                 odbc_fdw/Makefile
-# 
+#
 ##########################################################################
 
 MODULE_big = odbc_fdw
@@ -24,7 +25,7 @@ DATA = odbc_fdw--0.0.1.sql \
 
 REGRESS = $(notdir $(basename $(sort $(wildcard test/sql/*test.sql))))
 TEST_DIR = test/
-REGRESS_OPTS = --inputdir='$(TEST_DIR)' --outputdir='$(TEST_DIR)' --user='postgres'
+REGRESS_OPTS = --inputdir='$(TEST_DIR)' --outputdir='$(TEST_DIR)' --user='postgres' --load-extension=odbc_fdw
 
 SHLIB_LINK = -lodbc
 
@@ -36,6 +37,8 @@ PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
-run_test:
-	# Here should go the parser to change the template values for config values
+GENERATED_SQL_FILES = $(wildcard $(TEST_DIR)/sql/*.sql)
+
+integration_tests:
+	sh test/tests-generator.sh
 	make installcheck

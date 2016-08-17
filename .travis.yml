@@ -33,9 +33,18 @@ before_install:
   - echo -e "# TYPE  DATABASE        USER            ADDRESS                 METHOD \nlocal   all             postgres                                trust\nlocal   all             all                                     trust\nhost    all             all             127.0.0.1/32            trust" \
     | sudo tee /etc/postgresql/9.5/main/pg_hba.conf
   - sudo /etc/init.d/postgresql restart 9.5
+  
+  # Local MySQL
+  - sudo apt-get -y install mysql-server-5.5
 
 install:
+  # Postgres
+  - createdb fdw_tests
+  - psql -U postgres -d fdw_tests -f test/fixture/postgres_connector_fixtures.sql
+  # Mysql
+  - echo "create database if not exists fdw_tests" | mysql -u root
+  - echo test/fixture/mysql_connector_fixtures.sql | mysql -u root
   - sudo make install
 
 script:
-  - make run_test || { cat test/regression.diffs; false; }
+  - make integration_tests || { cat test/regression.diffs; false; }

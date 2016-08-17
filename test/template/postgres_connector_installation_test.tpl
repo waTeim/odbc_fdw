@@ -11,7 +11,7 @@ OPTIONS (
   odbc_UID '${user}',
   odbc_PWD '${password}'
 );
-IMPORT FOREIGN SCHEMA fdw_tests
+IMPORT FOREIGN SCHEMA public
     FROM SERVER postgres_fdw
     INTO public
     OPTIONS(
@@ -20,7 +20,7 @@ IMPORT FOREIGN SCHEMA fdw_tests
       "odbc_ByteaAsLongVarBinary" '1',
       sql_query 'select count(1) from postgres_test_table'
 );
-IMPORT FOREIGN SCHEMA fdw_tests
+IMPORT FOREIGN SCHEMA public
     FROM SERVER postgres_fdw
     INTO public
     OPTIONS(

@@ -6,14 +6,16 @@ env:
 
 before_install:
   - sudo add-apt-repository -y ppa:cartodb/postgresql-9.5
-  - sudo add-apt-repository -y ppa:cartodb/gis
-  - sudo add-apt-repository -y ppa:cartodb/gis-testing
+  #- sudo add-apt-repository -y ppa:cartodb/gis
+  #- sudo add-apt-repository -y ppa:cartodb/gis-testing
+  - sudo apt-get update
+
 
   # Needed for the compilation of odbc_fdw.c
   - sudo apt-get -y install unixodbc-dev
 
   # Force instalation of libgeos-3.5.0 (presumably needed because of existing version of postgis)
-  - sudo apt-get -y install libgeos-3.5.0=3.5.0-1cdb2
+  #- sudo apt-get -y install libgeos-3.5.0=3.5.0-1cdb2
 
   # Install postgres db and build deps
   - sudo /etc/init.d/postgresql stop # stop travis default instance
@@ -26,24 +28,56 @@ before_install:
 
   - sudo apt-get -y install postgresql-9.5=9.5.2-2ubuntu1
   - sudo apt-get -y install postgresql-server-dev-9.5=9.5.2-2ubuntu1
-  - sudo apt-get -y install postgresql-9.5-postgis-2.2=2.2.2.0-cdb2
-  - sudo apt-get -y install postgresql-9.5-postgis-scripts=2.2.2.0-cdb2
+  - sudo apt-get -y install odbcinst
+  - sudo apt-get -y install odbc-postgresql
+  #- sudo apt-get -y install postgresql-9.5-postgis-2.2=2.2.2.0-cdb2
+  #- sudo apt-get -y install postgresql-9.5-postgis-scripts=2.2.2.0-cdb2
 
   # configure it to accept local connections from postgres
   - echo -e "# TYPE  DATABASE        USER            ADDRESS                 METHOD \nlocal   all             postgres                                trust\nlocal   all             all                                     trust\nhost    all             all             127.0.0.1/32            trust" \
     | sudo tee /etc/postgresql/9.5/main/pg_hba.conf
   - sudo /etc/init.d/postgresql restart 9.5
-  
+
   # Local MySQL
   - sudo apt-get -y install mysql-server-5.5
+  - sudo apt-get -y install libmyodbc
+
+  - sudo cat /etc/odbcinst.ini
+
+  - echo "[PostgreSQL ANSI]" | sudo tee /etc/odbcinst.ini
+  - echo "Description = PostgreSQL ODBC driver (ANSI version)" | sudo tee -a /etc/odbcinst.ini
+  - echo "Driver      = psqlodbca.so" | sudo tee -a /etc/odbcinst.ini
+  - echo "Setup       = libodbcpsqlS.so" | sudo tee -a /etc/odbcinst.ini
+  - echo "Debug       = 0" | sudo tee -a /etc/odbcinst.ini
+  - echo "CommLog     = 1" | sudo tee -a /etc/odbcinst.ini
+  - echo "UsageCount  = 1" | sudo tee -a /etc/odbcinst.ini
+  - echo "\n" | sudo tee -a /etc/odbcinst.ini
+  - echo "[PostgreSQL Unicode]" | sudo tee -a /etc/odbcinst.ini
+  - echo "Description = PostgreSQL ODBC driver (Unicode version)" | sudo tee -a /etc/odbcinst.ini
+  - echo "Driver      = psqlodbcw.so" | sudo tee -a /etc/odbcinst.ini
+  - echo "Setup       = libodbcpsqlS.so" | sudo tee -a /etc/odbcinst.ini
+  - echo "Debug       = 0" | sudo tee -a /etc/odbcinst.ini
+  - echo "CommLog     = 1" | sudo tee -a /etc/odbcinst.ini
+  - echo "UsageCount  = 1" | sudo tee -a /etc/odbcinst.ini
+  - echo "\n" | sudo tee -a /etc/odbcinst.ini
+  - echo "[MySQL]" | sudo tee -a /etc/odbcinst.ini
+  - echo "Description = MySQL driver" | sudo tee -a /etc/odbcinst.ini
+  - echo "Driver      = libmyodbc.so" | sudo tee -a /etc/odbcinst.ini
+  - echo "Setup       = libodbcmyS.so" | sudo tee -a /etc/odbcinst.ini
+  - echo "CPTimeout   =" | sudo tee -a /etc/odbcinst.ini
+  - echo "CPReuse     =" | sudo tee -a /etc/odbcinst.ini
+  - echo "UsageCount  = 1" | sudo tee -a /etc/odbcinst.ini
+
+  - sudo cat /etc/odbcinst.ini
 
 install:
   # Postgres
-  - createdb fdw_tests
-  - psql -U postgres -d fdw_tests -f test/fixture/postgres_connector_fixtures.sql
+  - createdb -U postgres fdw_tests
+  - psql -U postgres -d fdw_tests -f $TRAVIS_BUILD_DIR/test/fixtures/postgres_connector_fixtures.sql
   # Mysql
   - echo "create database if not exists fdw_tests" | mysql -u root
-  - echo test/fixture/mysql_connector_fixtures.sql | mysql -u root
+  - mysql -u root -D fdw_tests < $TRAVIS_BUILD_DIR/test/fixtures/mysql_connector_fixtures.sql
+  # Install odbc extension
   - sudo make install
 
 script:

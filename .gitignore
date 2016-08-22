@@ -5,5 +5,5 @@ test/results/
 **/*.so
 test/regression.diffs
 test/regression.out
-test/sql/*_connector_installation*
-test/expected/*_connector_installation*
+test/sql/*_installation*
+test/expected/*_installation*

@@ -73,10 +73,10 @@ before_install:
 install:
   # Postgres
   - createdb -U postgres fdw_tests
-  - psql -U postgres -d fdw_tests -f $TRAVIS_BUILD_DIR/test/fixtures/postgres_connector_fixtures.sql
+  - psql -U postgres -d fdw_tests -f $TRAVIS_BUILD_DIR/test/fixtures/postgres_fixtures.sql
   # Mysql
   - echo "create database if not exists fdw_tests" | mysql -u root
-  - mysql -u root -D fdw_tests < $TRAVIS_BUILD_DIR/test/fixtures/mysql_connector_fixtures.sql
+  - mysql -u root -D fdw_tests < $TRAVIS_BUILD_DIR/test/fixtures/mysql_fixtures.sql
   # Install odbc extension
   - sudo make install
 

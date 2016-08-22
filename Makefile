@@ -23,8 +23,8 @@ DATA = odbc_fdw--0.0.1.sql \
   odbc_fdw--0.0.1--0.1.0.sql \
   odbc_fdw--0.1.0--0.0.1.sql
 
-REGRESS = $(notdir $(basename $(sort $(wildcard test/sql/*test.sql))))
 TEST_DIR = test/
+REGRESS = $(notdir $(basename $(sort $(wildcard $(TEST_DIR)/sql/*test.sql))))
 REGRESS_OPTS = --inputdir='$(TEST_DIR)' --outputdir='$(TEST_DIR)' --user='postgres' --load-extension=odbc_fdw
 
 SHLIB_LINK = -lodbc

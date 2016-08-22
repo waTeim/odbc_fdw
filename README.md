@@ -1,4 +1,4 @@
-ODBC FDW for PostgreSQL 9.5+
+ODBC FDW for PostgreSQL 9.5+ [![Build Status](https://travis-ci.org/CartoDB/odbc_fdw.svg?branch=master)](https://travis-ci.org/CartoDB/odbc_fdw)
 ============================
 
 This PostgreSQL extension implements a Foreign Data Wrapper (FDW) for

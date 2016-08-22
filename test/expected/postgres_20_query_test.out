@@ -1,0 +1,12 @@
+SELECT * FROM postgres_test_table;
+ id | varchar_example | text_example | integer_example | numeric_example |    timestamp_example     | boolean_example 
+----+-----------------+--------------+-----------------+-----------------+--------------------------+-----------------
+  1 | example         | example      |             100 |       10.120000 | Fri Jan 01 00:00:00 2016 | t
+(1 row)
+
+SELECT * FROM query_postgres_test_table;
+ count 
+-------
+     1
+(1 row)
+

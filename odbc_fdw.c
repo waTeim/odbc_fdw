@@ -1709,6 +1709,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 	StringInfoData sql_type;
 	SQLLEN indicator;
 	const char* schema_name;
+	bool missing_foreign_schema = FALSE;
 
 	#ifdef DEBUG
 		elog(DEBUG1, "odbcImportForeignSchema");
@@ -1720,6 +1721,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 	if (is_blank_string(schema_name))
 	{
 		schema_name = stmt->remote_schema;
+		missing_foreign_schema = TRUE;
 	}
 
 	if (!is_blank_string(options.sql_query))
@@ -1962,6 +1964,10 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 		if (is_blank_string(options.table))
 		{
 			appendOption(&create_statement, ++option_count == 1, "table", table_name);
+		}
+		if (missing_foreign_schema)
+		{
+			appendOption(&create_statement, ++option_count == 1, "schema", schema_name);
 		}
 		appendStringInfo(&create_statement, ");");
 		elog(DEBUG1, "CREATE: %s", create_statement.data);

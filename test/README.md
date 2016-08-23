@@ -42,4 +42,4 @@ In order to add new tests for a new connector, you've to follow the following st
 
 ### How to execute the tests
 
-To launch the tests you have to execute the command `make installcheck` after installing the extension by using `make install` command
+To launch the tests you have to execute the command `make integration_tests` after installing the extension by using `make install` command

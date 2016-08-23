@@ -10,3 +10,11 @@ SELECT * FROM query_postgres_test_table;
      1
 (1 row)
 
+SELECT * FROM existent_table_in_schema_public;
+ERROR:  Executing ODBC query
+SELECT * FROM test_table_in_schema;
+ id |  data   
+----+---------
+  1 | example
+(1 row)
+

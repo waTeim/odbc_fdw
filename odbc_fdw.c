@@ -1718,10 +1718,16 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 	odbcGetOptions(serverOid, stmt->options, &options);
 
 	schema_name = get_schema_name(&options);
-	if (is_blank_string(schema_name))
+	if (schema_name == NULL)
 	{
 		schema_name = stmt->remote_schema;
 		missing_foreign_schema = TRUE;
+	}
+	else if (is_blank_string(schema_name))
+	{
+		// This allows overriding and removing the schema, which is necessary
+		// for some schema-less ODBC data sources (e.g. Hive)
+		schema_name = NULL;
 	}
 
 	if (!is_blank_string(options.sql_query))

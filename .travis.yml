@@ -61,11 +61,14 @@ before_install:
   - $HADOOP_HOME/sbin/start-dfs.sh
   - $HIVE_HOME/bin/schematool -initSchema -dbType derby
   - nohup $HIVE_HOME/bin/hive --service hiveserver2 &
-  - sleep 60
-  - ls /tmp/travis
-  - cat /tmp/travis/hive.log
+  - sleep 10
   - $HIVE_HOME/bin/beeline -u jdbc:hive2://localhost:10000 -f $TRAVIS_BUILD_DIR/test/fixtures/hive_fixtures.sql
   - $HIVE_HOME/bin/beeline -u jdbc:hive2://localhost:10000 -e 'select * from hive_test_table'
+
+  # Install Hiveserver2 driver
+  - sudo apt-get install libsasl2-modules-gssapi-mit
+  - wget -P /tmp http://public-repo-1.hortonworks.com/HDP/hive-odbc/2.1.2.1002/debian/hive-odbc-native_2.1.2.1002-2_amd64.deb
+  - sudo dpkg -i /tmp/hive-odbc-native_2.1.2.1002-2_amd64.deb
 
   # ODBC installtion ini file
   - echo "[PostgreSQL ANSI]" | sudo tee /etc/odbcinst.ini
@@ -91,6 +94,14 @@ before_install:
   - echo "CPTimeout   =" | sudo tee -a /etc/odbcinst.ini
   - echo "CPReuse     =" | sudo tee -a /etc/odbcinst.ini
   - echo "UsageCount  = 1" | sudo tee -a /etc/odbcinst.ini
+  - echo "\n" | sudo tee -a /etc/odbcinst.ini
+  - echo "[Hortonworks Hive ODBC Driver 32-bit]" | sudo tee -a /etc/odbcinst.ini
+  - echo "Description=Hortonworks Hive ODBC Driver (32-bit)" | sudo tee -a /etc/odbcinst.ini
+  - echo "Driver=/usr/lib/hive/lib/native/Linux-i386-32/libhortonworkshiveodbc32.so" | sudo tee -a /etc/odbcinst.ini
+  - echo "\n" | sudo tee -a /etc/odbcinst.ini
+  - echo "[Hortonworks Hive ODBC Driver 64-bit]" | sudo tee -a /etc/odbcinst.ini
+  - echo "Description=Hortonworks Hive ODBC Driver (64-bit)" | sudo tee -a /etc/odbcinst.ini
+  - echo "Driver=/usr/lib/hive/lib/native/Linux-amd64-64/libhortonworkshiveodbc64.so" | sudo tee -a /etc/odbcinst.ini
 
 install:
   # Postgres

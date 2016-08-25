@@ -1,0 +1,12 @@
+SELECT * FROM hive_test_table;
+ id |   name    | description 
+----+-----------+-------------
+ 1  | test_user | A test user
+(1 row)
+
+SELECT * FROM query_hive_test_table;
+ EXPR_1 
+--------
+      1
+(1 row)
+

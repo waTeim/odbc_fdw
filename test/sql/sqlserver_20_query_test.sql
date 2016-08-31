@@ -1,0 +1,1 @@
+SELECT * FROM sqlserver_test_table;

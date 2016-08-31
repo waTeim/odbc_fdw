@@ -7,3 +7,5 @@ test/regression.diffs
 test/regression.out
 test/sql/*_installation*
 test/expected/*_installation*
+test/config/*.config
+!test/config/config.sample.config

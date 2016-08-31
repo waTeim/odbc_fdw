@@ -3,11 +3,20 @@ language: c
 env:
   global:
     - PAGER=cat
+    - HIVE_HOME=/opt/apache-hive-2.1.0-bin
+    - HADOOP_HOME=/opt/hadoop-2.7.2
 
 before_install:
-  - sudo add-apt-repository -y ppa:cartodb/postgresql-9.5
-  - sudo apt-get update
+  # Decrypt config files
+  - openssl aes-256-cbc -K $encrypted_d52b986e6313_key -iv $encrypted_d52b986e6313_iv -in $TRAVIS_BUILD_DIR/test/config/hive.config.enc -out $TRAVIS_BUILD_DIR/test/config/hive.config -d
+  - openssl aes-256-cbc -K $encrypted_d52b986e6313_key -iv $encrypted_d52b986e6313_iv -in $TRAVIS_BUILD_DIR/test/config/postgres.config.enc -out $TRAVIS_BUILD_DIR/test/config/postgres.config -d
+  - openssl aes-256-cbc -K $encrypted_d52b986e6313_key -iv $encrypted_d52b986e6313_iv -in $TRAVIS_BUILD_DIR/test/config/mysql.config.enc -out $TRAVIS_BUILD_DIR/test/config/mysql.config -d
+  - openssl aes-256-cbc -K $encrypted_d52b986e6313_key -iv $encrypted_d52b986e6313_iv -in $TRAVIS_BUILD_DIR/test/config/sqlserver.config.enc -out $TRAVIS_BUILD_DIR/test/config/sqlserver.config -d
 
+  # Add custom PPAs from cartodb
+  - sudo add-apt-repository -y ppa:cartodb/postgresql-9.5
+  - sudo add-apt-repository -y ppa:cartodb/odbc
+  - sudo apt-get update
 
   # Needed for the compilation of odbc_fdw.c
   - sudo apt-get -y install unixodbc-dev
@@ -45,13 +54,10 @@ before_install:
   - cat ~/.ssh/id_dsa.pub >> ~/.ssh/authorized_keys
   - chmod 0600 ~/.ssh/authorized_keys
   - sudo apt-get -y install openjdk-7-jre
-  - export JAVA_HOME=/usr/lib/jvm/java-7-openjdk-amd64
   - wget -P /opt http://apache.rediris.es/hadoop/core/hadoop-2.7.2/hadoop-2.7.2.tar.gz
   - wget -P /opt http://apache.rediris.es/hive/hive-2.1.0/apache-hive-2.1.0-bin.tar.gz
   - tar -xzvf /opt/hadoop-2.7.2.tar.gz -C /opt
   - tar -xzvf /opt/apache-hive-2.1.0-bin.tar.gz -C /opt
-  - export HIVE_HOME=/opt/apache-hive-2.1.0-bin
-  - export HADOOP_HOME=/opt/hadoop-2.7.2
   - sed -i -- 's/export JAVA_HOME=${JAVA_HOME}/export JAVA_HOME=\/usr\/lib\/jvm\/java-7-openjdk-amd64/g' $HADOOP_HOME/etc/hadoop/hadoop-env.sh
   - $HADOOP_HOME/bin/hdfs dfs -mkdir /tmp/warehouse
   - $HADOOP_HOME/bin/hdfs dfs -chmod g+w /tmp/warehouse
@@ -61,14 +67,17 @@ before_install:
   - $HADOOP_HOME/sbin/start-dfs.sh
   - $HIVE_HOME/bin/schematool -initSchema -dbType derby
   - nohup $HIVE_HOME/bin/hive --service hiveserver2 &
+  # Wait for server to start
   - sleep 10
-  - $HIVE_HOME/bin/beeline -u jdbc:hive2://localhost:10000 -f $TRAVIS_BUILD_DIR/test/fixtures/hive_fixtures.sql
-  - $HIVE_HOME/bin/beeline -u jdbc:hive2://localhost:10000 -e 'select * from hive_test_table'
+  #- $HIVE_HOME/bin/beeline -u jdbc:hive2://localhost:10000 -f $TRAVIS_BUILD_DIR/test/fixtures/hive_fixtures.sql
 
   # Install Hiveserver2 driver
   - sudo apt-get install libsasl2-modules-gssapi-mit
   - wget -P /tmp http://public-repo-1.hortonworks.com/HDP/hive-odbc/2.1.2.1002/debian/hive-odbc-native_2.1.2.1002-2_amd64.deb
   - sudo dpkg -i /tmp/hive-odbc-native_2.1.2.1002-2_amd64.deb
+
+  # SQL Server
+  - sudo apt-get -y install freetds=1.00.14cdb5
 
   # ODBC installtion ini file
   - echo "[PostgreSQL ANSI]" | sudo tee /etc/odbcinst.ini
@@ -102,15 +111,12 @@ before_install:
   - echo "[Hortonworks Hive ODBC Driver 64-bit]" | sudo tee -a /etc/odbcinst.ini
   - echo "Description=Hortonworks Hive ODBC Driver (64-bit)" | sudo tee -a /etc/odbcinst.ini
   - echo "Driver=/usr/lib/hive/lib/native/Linux-amd64-64/libhortonworkshiveodbc64.so" | sudo tee -a /etc/odbcinst.ini
+  - echo "[FreeTDS]" | sudo tee -a /etc/odbcinst.ini
+  - echo "Driver=/usr/lib/x86_64-linux-gnu/libtdsodbc.so" | sudo tee -a /etc/odbcinst.ini
+  - echo "Setup=/usr/lib/x86_64-linux-gnu/odbc/libtdsS.so" | sudo tee -a /etc/odbcinst.ini
 
 install:
-  # Postgres
-  - createdb -U postgres fdw_tests
-  - psql -U postgres -d fdw_tests -f $TRAVIS_BUILD_DIR/test/fixtures/postgres_fixtures.sql
-  # Mysql
-  - echo "create database if not exists fdw_tests" | mysql -u root
-  - mysql -u root -D fdw_tests < $TRAVIS_BUILD_DIR/test/fixtures/mysql_fixtures.sql
-  # Install odbc extension
+  - bash $TRAVIS_BUILD_DIR/test/fixtures/load_all_fixtures.sh
   - sudo make install
 
 script:

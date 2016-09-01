@@ -35,11 +35,37 @@ Other objective of these tests is to check the viability of use for certain data
 In order to add new tests for a new connector, you've to follow the following steps:
 
 - Add the needed files to be able to autogenerate tests and expectations to tests installation for the new connector:
-    - Create a new configuration file inside the `configuration` folder following the pattern for its name: `connector_name.config`
+    - Create a new configuration file inside the `configuration` folder following the pattern for its name: `connector_name.config`.
+    - **Config file must not be stored in the repository, we only [store encrypted config files](#configuration_files)**
     - After that, you need to create a new template inside the `templates` folder following the pattern for its name: `connector_name_*.tpl`. Right now were are following this convention: `connector_name_installation_test.tpl`
 - Add a new fixture file with prepared data for the new connector. For example: `fixtures\mysql_fixtures.sql`
+- [optional] Add command to load the new fixture in the `load_fixtures.sh` script. This script is used by Travis to load the fixtures in the test databases.
 - Create tests and expectations to test queries with the new connector. For example: `sql\mysql_20_query_test.sql`
 
+### Configuration files
+
+Configuration files contain sensitive information that must not be stored in the repository. In this folder we only store encrypted files `.config.enc` that are going to be used by Travis.
+
+When we want to change or add a new configuration file, we have to encrypt the file to be used by Travis. Before all you should read [this post](https://docs.travis-ci.com/user/encrypting-files/) to understand how it works and how to setup the environment to encrypt the files.
+
+When you use the command `travis encrypt-file` you should provide a key and a IV value. The key needs to be 64 character long and IV needs to be 32 character long. And both of them must be a valid hex number.
+
+I've been using these ruby commands to generate them:
+
+```
+# Key
+ruby -rsecurerandom -e 'puts SecureRandom.hex(32).chomp'
+# IV
+ruby -rsecurerandom -e 'puts SecureRandom.hex(16).chomp'
+```
+
+An example would be:
+
+```
+travis encrypt-file -K "fookey" --iv "foodiv" example.config
+```
+
+After encrypting the file, commit only the `.config.enc` file and add the `openssl` command execution to the `.travis.yml` file.
 ### How to execute the tests
 
 To launch the tests you have to execute the command `make integration_tests` after installing the extension by using `make install` command

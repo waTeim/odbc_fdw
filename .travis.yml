@@ -77,7 +77,7 @@ before_install:
   - sudo dpkg -i /tmp/hive-odbc-native_2.1.2.1002-2_amd64.deb
 
   # SQL Server
-  - sudo apt-get -y install freetds=1.00.14cdb5
+  - sudo apt-get -y install freetds=1.00.14cdb7
 
   # ODBC installtion ini file
   - echo "[PostgreSQL ANSI]" | sudo tee /etc/odbcinst.ini

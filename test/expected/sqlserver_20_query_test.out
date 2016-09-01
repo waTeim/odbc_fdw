@@ -1,0 +1,6 @@
+SELECT * FROM sqlserver_test_table;
+ id | name 
+----+------
+  1 | aaaa
+(1 row)
+

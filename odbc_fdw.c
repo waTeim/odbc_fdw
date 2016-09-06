@@ -49,6 +49,8 @@
 #include "optimizer/restrictinfo.h"
 #include "optimizer/planmain.h"
 
+#include "executor/spi.h"
+
 #include <stdio.h>
 #include <sql.h>
 #include <sqlext.h>
@@ -138,9 +140,11 @@ typedef enum { TEXT_CONVERSION, HEX_CONVERSION, BIN_CONVERSION, BOOL_CONVERSION 
  */
 extern Datum odbc_fdw_handler(PG_FUNCTION_ARGS);
 extern Datum odbc_fdw_validator(PG_FUNCTION_ARGS);
+extern Datum odbc_tables_list(PG_FUNCTION_ARGS);
 
 PG_FUNCTION_INFO_V1(odbc_fdw_handler);
 PG_FUNCTION_INFO_V1(odbc_fdw_validator);
+PG_FUNCTION_INFO_V1(odbc_tables_list);
 
 /*
  * FDW callback routines
@@ -170,6 +174,7 @@ static void odbc_connection(odbcFdwOptions* options, SQLHENV *env, SQLHDBC *dbc)
 static void sql_data_type(SQLSMALLINT odbc_data_type, SQLULEN column_size, SQLSMALLINT decimal_digits, SQLSMALLINT nullable, StringInfo sql_type);
 static void odbcGetOptions(Oid server_oid, List *add_options, odbcFdwOptions *extracted_options);
 static void odbcGetTableOptions(Oid foreigntableid, odbcFdwOptions *extracted_options);
+static void odbcGetTableSize(odbcFdwOptions* options, unsigned int *size);
 static void check_return(SQLRETURN ret, char *msg, SQLHANDLE handle, SQLSMALLINT type);
 static void odbcConnStr(StringInfoData *conn_str, odbcFdwOptions* options);
 static char* get_schema_name(odbcFdwOptions *options);
@@ -625,7 +630,7 @@ odbcGetOptions(Oid server_oid, List *add_options, odbcFdwOptions *extracted_opti
 		elog(DEBUG1, "odbcGetOptions");
 	#endif
 
-    server  = GetForeignServer(server_oid);
+  server  = GetForeignServer(server_oid);
 	mapping = GetUserMapping(GetUserId(), server_oid);
 
 	options = NIL;
@@ -649,7 +654,7 @@ odbcGetTableOptions(Oid foreigntableid, odbcFdwOptions *extracted_options)
 	#endif
 
 	table = GetForeignTable(foreigntableid);
-    odbcGetOptions(table->serverid, table->options, extracted_options);
+  odbcGetOptions(table->serverid, table->options, extracted_options);
 }
 
 static void
@@ -749,7 +754,7 @@ static bool appendConnAttribute(bool sep, StringInfoData *conn_str, const char* 
 static void odbcConnStr(StringInfoData *conn_str, odbcFdwOptions* options)
 {
 	bool sep = FALSE;
-	ListCell        *lc;
+	ListCell *lc;
 
 	initStringInfo(conn_str);
 
@@ -873,6 +878,164 @@ odbcGetTableSize(odbcFdwOptions* options, unsigned int *size)
 	}
 	if (dbc)
 		SQLDisconnect(dbc);
+}
+
+/*
+ * Get the list of tables for the current datasource
+ */
+typedef struct {
+  SQLSMALLINT TargetType;
+  SQLPOINTER TargetValuePtr;
+  SQLINTEGER BufferLength;
+  SQLLEN StrLen_or_Ind;
+} DataBinding;
+
+typedef struct {
+  Oid serverOid;
+  DataBinding* tableResult;
+  SQLHSTMT stmt;
+  SQLCHAR schema;
+  SQLCHAR name;
+  SQLUINTEGER rowLimit;
+  SQLUINTEGER currentRow;
+} TableDataCtx;
+
+static int strtoint(const char *nptr, char **endptr, int base)
+{
+  long val = strtol(nptr, endptr, base);
+  return (int) val;
+}
+
+static Oid oid_from_server_name(char *serverName)
+{
+  char *serverOidString;
+  char *ptr;
+  char sql[1024];
+  int serverOid;
+  HeapTuple tuple;
+  SPITupleTable *tuptable;
+  TupleDesc tupdesc;
+  int ret;
+
+  if ((ret = SPI_connect()) < 0) {
+    elog(ERROR, "oid_from_server_name: SPI_connect returned %d", ret);
+  }
+
+  sprintf(sql, "SELECT oid FROM pg_foreign_server where srvname = '%s'", serverName);
+  if (ret = SPI_execute(sql, true, 1) != SPI_OK_SELECT) {
+    elog(ERROR, "oid_from_server_name: Get server name from Oid query Failed, SP_exec returned %d.", ret);
+  }
+
+  if (SPI_tuptable->vals[0] != NULL)
+  {
+    tupdesc  = SPI_tuptable->tupdesc;
+    tuptable = SPI_tuptable;
+    tuple    = SPI_tuptable->vals[0];
+
+    serverOidString = SPI_getvalue(tuple, tupdesc, 1);
+    serverOid = strtoint(serverOidString, &ptr, 10);
+  } else {
+    elog(ERROR, "Foreign server %s doesn't exist", serverName);
+  }
+
+  SPI_finish();
+  return serverOid;
+}
+
+Datum odbc_tables_list(PG_FUNCTION_ARGS)
+{
+	SQLHENV env;
+	SQLHDBC dbc;
+	SQLHSTMT stmt;
+	SQLRETURN ret;
+  SQLUSMALLINT i;
+  SQLUSMALLINT numColumns = 5;
+  SQLUSMALLINT bufferSize = 1024;
+  SQLUINTEGER rowLimit;
+  SQLUINTEGER currentRow;
+  SQLRETURN retCode;
+
+  FuncCallContext *funcctx;
+  TupleDesc tupdesc;
+  TableDataCtx *datafctx;
+  MemoryContext oldcontext;
+  DataBinding* tableResult;
+  AttInMetadata *attinmeta;
+
+  if (SRF_IS_FIRSTCALL()) {
+    funcctx = SRF_FIRSTCALL_INIT();
+    MemoryContext oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
+    datafctx = (TableDataCtx *) palloc(sizeof(TableDataCtx));
+    tableResult = (DataBinding*) palloc( numColumns * sizeof(DataBinding) );
+    
+    char *serverName = text_to_cstring(PG_GETARG_TEXT_PP(0));
+    int serverOid = oid_from_server_name(serverName);
+
+    rowLimit = PG_GETARG_INT32(1); 
+    currentRow = 0;
+
+    odbcFdwOptions options;
+    odbcGetOptions(serverOid, NULL, &options);
+    odbc_connection(&options, &env, &dbc);
+    SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
+
+    for ( i = 0 ; i < numColumns ; i++ ) {
+      tableResult[i].TargetType = SQL_C_CHAR;
+      tableResult[i].BufferLength = (bufferSize + 1);
+      tableResult[i].TargetValuePtr = palloc( sizeof(char)*tableResult[i].BufferLength );
+    }
+
+    for ( i = 0 ; i < numColumns ; i++ ) {
+      retCode = SQLBindCol(stmt, i + 1, tableResult[i].TargetType, tableResult[i].TargetValuePtr, tableResult[i].BufferLength, &(tableResult[i].StrLen_or_Ind));
+    }
+
+    if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
+      ereport(ERROR,
+          (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+           errmsg("function returning record called in context "
+             "that cannot accept type record")));
+
+    attinmeta = TupleDescGetAttInMetadata(tupdesc);
+
+    datafctx->serverOid = serverOid;
+    datafctx->tableResult = tableResult;
+    datafctx->stmt = stmt;
+    datafctx->rowLimit = rowLimit;
+    datafctx->currentRow = currentRow;
+    funcctx->user_fctx = datafctx;
+    funcctx->attinmeta = attinmeta;
+
+    MemoryContextSwitchTo(oldcontext);
+  }
+
+  funcctx = SRF_PERCALL_SETUP();
+
+  datafctx = funcctx->user_fctx; 
+  stmt = datafctx->stmt;
+  tableResult = datafctx->tableResult;
+  rowLimit = datafctx->rowLimit;
+  currentRow = datafctx->currentRow;
+  attinmeta = funcctx->attinmeta;
+
+  retCode = SQLTables( stmt, NULL, SQL_NTS, NULL, SQL_NTS, NULL, SQL_NTS, (SQLCHAR*)"TABLE", SQL_NTS );
+  if (SQL_SUCCEEDED(retCode = SQLFetch(stmt)) && (rowLimit == 0 || currentRow < rowLimit)) {
+    char       **values;
+    HeapTuple    tuple;
+    Datum        result;
+
+    values = (char **) palloc(2 * sizeof(char *));
+    values[0] = (char *) palloc(256 * sizeof(char));
+    values[1] = (char *) palloc(256 * sizeof(char));
+    snprintf(values[0], 256, "%s", (char *)tableResult[0].TargetValuePtr);
+    snprintf(values[1], 256, "%s", (char *)tableResult[2].TargetValuePtr);
+    tuple = BuildTupleFromCStrings(attinmeta, values);
+    result = HeapTupleGetDatum(tuple);
+    currentRow++;
+    datafctx->currentRow = currentRow;
+    SRF_RETURN_NEXT(funcctx, result);
+  } else {
+    SRF_RETURN_DONE(funcctx);
+  }
 }
 
 /*

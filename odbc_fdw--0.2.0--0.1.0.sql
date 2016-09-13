@@ -30,5 +30,7 @@ ALTER FOREIGN DATA WRAPPER odbc_fdw
   VALIDATOR odbc_fdw_validator;
 
 DROP FUNCTION IF EXISTS ODBCTablesList(text, integer);
+DROP FUNCTION IF EXISTS ODBCTableSize(text, text);
+DROP FUNCTION IF EXISTS ODBCQuerySize(text, text);
 
 DROP TYPE __tabledata;

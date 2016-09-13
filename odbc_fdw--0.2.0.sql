@@ -34,3 +34,11 @@ CREATE TYPE __tabledata AS (schema text, name text);
 CREATE FUNCTION ODBCTablesList(text, integer DEFAULT 0) RETURNS SETOF __tabledata
 AS 'MODULE_PATHNAME', 'odbc_tables_list'
 LANGUAGE C STRICT;
+
+CREATE FUNCTION ODBCTableSize(text, text) RETURNS INTEGER
+AS 'MODULE_PATHNAME', 'odbc_table_size'
+LANGUAGE C STRICT;
+
+CREATE FUNCTION ODBCQuerySize(text, text) RETURNS INTEGER
+AS 'MODULE_PATHNAME', 'odbc_query_size'
+LANGUAGE C STRICT;

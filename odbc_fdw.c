@@ -44,6 +44,9 @@
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/rel.h"
+#include "nodes/nodes.h"
+#include "nodes/makefuncs.h"
+#include "nodes/pg_list.h"
 
 #include "optimizer/pathnode.h"
 #include "optimizer/restrictinfo.h"
@@ -141,10 +144,14 @@ typedef enum { TEXT_CONVERSION, HEX_CONVERSION, BIN_CONVERSION, BOOL_CONVERSION 
 extern Datum odbc_fdw_handler(PG_FUNCTION_ARGS);
 extern Datum odbc_fdw_validator(PG_FUNCTION_ARGS);
 extern Datum odbc_tables_list(PG_FUNCTION_ARGS);
+extern Datum odbc_table_size(PG_FUNCTION_ARGS);
+extern Datum odbc_query_size(PG_FUNCTION_ARGS);
 
 PG_FUNCTION_INFO_V1(odbc_fdw_handler);
 PG_FUNCTION_INFO_V1(odbc_fdw_validator);
 PG_FUNCTION_INFO_V1(odbc_tables_list);
+PG_FUNCTION_INFO_V1(odbc_table_size);
+PG_FUNCTION_INFO_V1(odbc_query_size);
 
 /*
  * FDW callback routines
@@ -179,6 +186,7 @@ static void check_return(SQLRETURN ret, char *msg, SQLHANDLE handle, SQLSMALLINT
 static void odbcConnStr(StringInfoData *conn_str, odbcFdwOptions* options);
 static char* get_schema_name(odbcFdwOptions *options);
 static inline bool is_blank_string(const char *s);
+static Oid oid_from_server_name(char *serverName);
 
 /*
  * Check if string pointer is NULL or points to empty string
@@ -857,7 +865,7 @@ odbcGetTableSize(odbcFdwOptions* options, unsigned int *size)
 	}
 	else
 	{
-		elog(DEBUG1, "Oops!");
+		elog(WARNING, "Error getting the table %s size", options->table);
 	}
 
 	/* Free handles, and disconnect */
@@ -879,26 +887,6 @@ odbcGetTableSize(odbcFdwOptions* options, unsigned int *size)
 	if (dbc)
 		SQLDisconnect(dbc);
 }
-
-/*
- * Get the list of tables for the current datasource
- */
-typedef struct {
-  SQLSMALLINT TargetType;
-  SQLPOINTER TargetValuePtr;
-  SQLINTEGER BufferLength;
-  SQLLEN StrLen_or_Ind;
-} DataBinding;
-
-typedef struct {
-  Oid serverOid;
-  DataBinding* tableResult;
-  SQLHSTMT stmt;
-  SQLCHAR schema;
-  SQLCHAR name;
-  SQLUINTEGER rowLimit;
-  SQLUINTEGER currentRow;
-} TableDataCtx;
 
 static int strtoint(const char *nptr, char **endptr, int base)
 {
@@ -941,6 +929,67 @@ static Oid oid_from_server_name(char *serverName)
   SPI_finish();
   return serverOid;
 }
+
+Datum
+odbc_table_size(PG_FUNCTION_ARGS)
+{
+  char *serverName = text_to_cstring(PG_GETARG_TEXT_PP(0));
+  char *tableName = text_to_cstring(PG_GETARG_TEXT_PP(1));
+  char *defname = "table";
+  int *tableSize;
+  List *tableOptions = NIL;
+  Node *val = (Node *) makeString(tableName);
+  DefElem *elem = (DefElem *) makeDefElem(defname, val);
+
+  tableOptions = lappend(tableOptions, elem);
+  Oid serverOid = oid_from_server_name(serverName);
+  odbcFdwOptions options;
+  odbcGetOptions(serverOid, tableOptions, &options);
+  odbcGetTableSize(&options, tableSize);
+
+  PG_RETURN_INT32(*tableSize);
+}
+
+Datum
+odbc_query_size(PG_FUNCTION_ARGS)
+{
+  char *serverName = text_to_cstring(PG_GETARG_TEXT_PP(0));
+  char *sqlQuery = text_to_cstring(PG_GETARG_TEXT_PP(1));
+  char *defname = "sql_query";
+  int *querySize;
+  List *queryOptions = NIL;
+  Node *val = (Node *) makeString(sqlQuery);
+  DefElem *elem = (DefElem *) makeDefElem(defname, val);
+
+  queryOptions = lappend(queryOptions, elem);
+  Oid serverOid = oid_from_server_name(serverName);
+  odbcFdwOptions options;
+  odbcGetOptions(serverOid, queryOptions, &options);
+  odbcGetTableSize(&options, querySize);
+
+  PG_RETURN_INT32(*querySize);
+}
+
+/*
+ * Get the list of tables for the current datasource
+ */
+typedef struct {
+  SQLSMALLINT TargetType;
+  SQLPOINTER TargetValuePtr;
+  SQLINTEGER BufferLength;
+  SQLLEN StrLen_or_Ind;
+} DataBinding;
+
+typedef struct {
+  Oid serverOid;
+  DataBinding* tableResult;
+  SQLHSTMT stmt;
+  SQLCHAR schema;
+  SQLCHAR name;
+  SQLUINTEGER rowLimit;
+  SQLUINTEGER currentRow;
+} TableDataCtx;
+
 
 Datum odbc_tables_list(PG_FUNCTION_ARGS)
 {

@@ -16,3 +16,15 @@ SELECT * FROM ODBCTablesList('hive_fdw', 1);
  HIVE   | hive_test_table
 (1 row)
 
+SELECT * FROM ODBCTableSize('hive_fdw', 'hive_test_table');
+ odbctablesize 
+---------------
+             1
+(1 row)
+
+SELECT * FROM ODBCQuerySize('hive_fdw', 'select * from hive_test_table');
+ odbcquerysize 
+---------------
+             1
+(1 row)
+

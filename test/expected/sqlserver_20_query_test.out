@@ -10,3 +10,15 @@ SELECT * FROM ODBCTablesList('sqlserver_fdw', 1);
  fdw_tests | sqlserver_test_table
 (1 row)
 
+SELECT * FROM ODBCTableSize('sqlserver_fdw', 'sqlserver_test_table');
+ odbctablesize 
+---------------
+             1
+(1 row)
+
+SELECT * FROM ODBCQuerySize('sqlserver_fdw', 'select * from sqlserver_test_table');
+ odbcquerysize 
+---------------
+             1
+(1 row)
+

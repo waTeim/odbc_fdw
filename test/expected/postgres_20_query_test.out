@@ -24,3 +24,15 @@ SELECT * FROM ODBCTablesList('postgres_fdw', 1);
  fdw_tests | existent_table_in_schema_public
 (1 row)
 
+SELECT * FROM ODBCTableSize('postgres_fdw', 'postgres_test_table');
+ odbctablesize 
+---------------
+             1
+(1 row)
+
+SELECT * FROM ODBCQuerySize('postgres_fdw', 'select * from postgres_test_table');
+ odbcquerysize 
+---------------
+             1
+(1 row)
+

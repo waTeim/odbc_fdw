@@ -897,11 +897,9 @@ static int strtoint(const char *nptr, char **endptr, int base)
 static Oid oid_from_server_name(char *serverName)
 {
   char *serverOidString;
-  char *ptr;
   char sql[1024];
   int serverOid;
   HeapTuple tuple;
-  SPITupleTable *tuptable;
   TupleDesc tupdesc;
   int ret;
 
@@ -917,11 +915,10 @@ static Oid oid_from_server_name(char *serverName)
   if (SPI_tuptable->vals[0] != NULL)
   {
     tupdesc  = SPI_tuptable->tupdesc;
-    tuptable = SPI_tuptable;
     tuple    = SPI_tuptable->vals[0];
 
     serverOidString = SPI_getvalue(tuple, tupdesc, 1);
-    serverOid = strtoint(serverOidString, &ptr, 10);
+    serverOid = strtoint(serverOidString, NULL, 10);
   } else {
     elog(ERROR, "Foreign server %s doesn't exist", serverName);
   }
@@ -936,7 +933,7 @@ odbc_table_size(PG_FUNCTION_ARGS)
   char *serverName = text_to_cstring(PG_GETARG_TEXT_PP(0));
   char *tableName = text_to_cstring(PG_GETARG_TEXT_PP(1));
   char *defname = "table";
-  int *tableSize;
+  int tableSize;
   List *tableOptions = NIL;
   Node *val = (Node *) makeString(tableName);
   DefElem *elem = (DefElem *) makeDefElem(defname, val);
@@ -945,9 +942,9 @@ odbc_table_size(PG_FUNCTION_ARGS)
   Oid serverOid = oid_from_server_name(serverName);
   odbcFdwOptions options;
   odbcGetOptions(serverOid, tableOptions, &options);
-  odbcGetTableSize(&options, tableSize);
+  odbcGetTableSize(&options, &tableSize);
 
-  PG_RETURN_INT32(*tableSize);
+  PG_RETURN_INT32(tableSize);
 }
 
 Datum
@@ -956,7 +953,7 @@ odbc_query_size(PG_FUNCTION_ARGS)
   char *serverName = text_to_cstring(PG_GETARG_TEXT_PP(0));
   char *sqlQuery = text_to_cstring(PG_GETARG_TEXT_PP(1));
   char *defname = "sql_query";
-  int *querySize;
+  int querySize;
   List *queryOptions = NIL;
   Node *val = (Node *) makeString(sqlQuery);
   DefElem *elem = (DefElem *) makeDefElem(defname, val);
@@ -965,9 +962,9 @@ odbc_query_size(PG_FUNCTION_ARGS)
   Oid serverOid = oid_from_server_name(serverName);
   odbcFdwOptions options;
   odbcGetOptions(serverOid, queryOptions, &options);
-  odbcGetTableSize(&options, querySize);
+  odbcGetTableSize(&options, &querySize);
 
-  PG_RETURN_INT32(*querySize);
+  PG_RETURN_INT32(querySize);
 }
 
 /*

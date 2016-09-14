@@ -10,3 +10,21 @@ SELECT * FROM query_mysql_test_table;
         1
 (1 row)
 
+SELECT * FROM ODBCTablesList('mysql_fdw', 1);
+  schema   |       name       
+-----------+------------------
+ fdw_tests | mysql_test_table
+(1 row)
+
+SELECT * FROM ODBCTableSize('mysql_fdw', 'mysql_test_table');
+ odbctablesize 
+---------------
+             1
+(1 row)
+
+SELECT * FROM ODBCQuerySize('mysql_fdw', 'select * from mysql_test_table');
+ odbcquerysize 
+---------------
+             1
+(1 row)
+

@@ -11,7 +11,7 @@ SELECT * FROM query_mysql_test_table;
 (1 row)
 
 SELECT * FROM ODBCTablesList('mysql_fdw', 1);
- schema |       name
+ schema |       name       
 --------+------------------
         | mysql_test_table
 (1 row)

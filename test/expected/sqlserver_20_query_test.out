@@ -5,9 +5,9 @@ SELECT * FROM sqlserver_test_table;
 (1 row)
 
 SELECT * FROM ODBCTablesList('sqlserver_fdw', 1);
-  schema   |         name         
------------+----------------------
- fdw_tests | sqlserver_test_table
+ schema |         name         
+--------+----------------------
+ dbo    | sqlserver_test_table
 (1 row)
 
 SELECT * FROM ODBCTableSize('sqlserver_fdw', 'sqlserver_test_table');

@@ -11,9 +11,9 @@ SELECT * FROM query_hive_test_table;
 (1 row)
 
 SELECT * FROM ODBCTablesList('hive_fdw', 1);
- schema |      name       
---------+-----------------
- HIVE   | hive_test_table
+ schema  |      name       
+---------+-----------------
+ default | hive_test_table
 (1 row)
 
 SELECT * FROM ODBCTableSize('hive_fdw', 'hive_test_table');

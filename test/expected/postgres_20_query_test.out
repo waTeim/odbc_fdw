@@ -19,9 +19,9 @@ SELECT * FROM test_table_in_schema;
 (1 row)
 
 SELECT * FROM ODBCTablesList('postgres_fdw', 1);
-  schema   |              name               
------------+---------------------------------
- fdw_tests | existent_table_in_schema_public
+ schema |              name               
+--------+---------------------------------
+ public | existent_table_in_schema_public
 (1 row)
 
 SELECT * FROM ODBCTableSize('postgres_fdw', 'postgres_test_table');

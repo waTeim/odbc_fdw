@@ -72,6 +72,17 @@ PG_MODULE_MAGIC;
 /* Maximum GetData buffer size */
 #define MAXIMUM_BUFFER_SIZE 8192
 
+/*
+ * Numbers of the columns returned by SQLTables:
+ * 1: TABLE_CAT (ODBC 3.0) TABLE_QUALIFIER (ODBC 2.0) -- database name
+ * 2: TABLE_SCHEM (ODBC 3.0) TABLE_OWNER (ODBC 2.0)   -- schema name
+ * 3: TABLE_NAME
+ * 4: TABLE_TYPE
+ * 5: REMARKS
+ */
+#define SQLTABLES_SCHEMA_COLUMN 2
+#define SQLTABLES_NAME_COLUMN 3
+
 #define ODBC_SQLSTATE_FRACTIONAL_TRUNCATION "01S07"
 typedef struct odbcFdwOptions
 {
@@ -1013,7 +1024,7 @@ Datum odbc_tables_list(PG_FUNCTION_ARGS)
     MemoryContext oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
     datafctx = (TableDataCtx *) palloc(sizeof(TableDataCtx));
     tableResult = (DataBinding*) palloc( numColumns * sizeof(DataBinding) );
-    
+
     char *serverName = text_to_cstring(PG_GETARG_TEXT_PP(0));
     int serverOid = oid_from_server_name(serverName);
 
@@ -1072,8 +1083,8 @@ Datum odbc_tables_list(PG_FUNCTION_ARGS)
     values = (char **) palloc(2 * sizeof(char *));
     values[0] = (char *) palloc(256 * sizeof(char));
     values[1] = (char *) palloc(256 * sizeof(char));
-    snprintf(values[0], 256, "%s", (char *)tableResult[0].TargetValuePtr);
-    snprintf(values[1], 256, "%s", (char *)tableResult[2].TargetValuePtr);
+    snprintf(values[0], 256, "%s", (char *)tableResult[SQLTABLES_SCHEMA_COLUMN-1].TargetValuePtr);
+    snprintf(values[1], 256, "%s", (char *)tableResult[SQLTABLES_NAME_COLUMN-1].TargetValuePtr);
     tuple = BuildTupleFromCStrings(attinmeta, values);
     result = HeapTupleGetDatum(tuple);
     currentRow++;
@@ -2026,7 +2037,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 				{
 					int excluded = FALSE;
 					TableName = (SQLCHAR *) palloc(sizeof(SQLCHAR) * MAXIMUM_TABLE_NAME_LEN);
-					ret = SQLGetData(tables_stmt, 3, SQL_C_CHAR, TableName, MAXIMUM_TABLE_NAME_LEN, &indicator);
+					ret = SQLGetData(tables_stmt, SQLTABLES_NAME_COLUMN, SQL_C_CHAR, TableName, MAXIMUM_TABLE_NAME_LEN, &indicator);
 					check_return(ret, "Reading table name", tables_stmt, SQL_HANDLE_STMT);
 
 					/* Since we're not filtering the SQLTables call by schema
@@ -2036,7 +2047,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 					   So we only reject tables for which the schema is not
 					   blank and different from the desired schema:
 					 */
-					ret = SQLGetData(tables_stmt, 2, SQL_C_CHAR, table_schema, MAXIMUM_SCHEMA_NAME_LEN, &indicator);
+					ret = SQLGetData(tables_stmt, SQLTABLES_SCHEMA_COLUMN, SQL_C_CHAR, table_schema, MAXIMUM_SCHEMA_NAME_LEN, &indicator);
 					if (SQL_SUCCESS == ret)
 					{
 						if (!is_blank_string((char*)table_schema) && strcmp((char*)table_schema, schema_name) )

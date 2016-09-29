@@ -1893,7 +1893,7 @@ appendOption(StringInfo str, bool first, const char* option_name, const char* op
 	{
 		appendStringInfo(str, ",\n");
 	}
-	appendStringInfo(str, "%s ", option_name);
+	appendStringInfo(str, "\"%s\" ", option_name);
 	appendQuotedString(str, option_value);
 }
 

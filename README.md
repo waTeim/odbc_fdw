@@ -96,6 +96,10 @@ option     | description
 `sql_count`| Optional: User defined SQL statement for counting number of records in the foreign table(s). This should use the syntax of ODBC driver used.
 `prefix`   | For IMPORT FOREIGN SCHEMA: a prefix for foreign table names. This can be used to prepend a prefix to the names of tables imported from an external database.
 
+Note that if the `prefix` option is used and only one specific foreign table is to be imported,
+the `table` option is necessary (to specify the unprefixed, remote table name). In this case
+it is better not to include a `LIMIT TO` clause (otherwise it has to reference the *prefixed* table name).
+
 Example
 -------
 

@@ -3,7 +3,7 @@ language: c
 env:
   global:
     - PAGER=cat
-    - HIVE_HOME=/opt/apache-hive-2.1.0-bin
+    - HIVE_HOME=/opt/apache-hive-2.1.1-bin
     - HADOOP_HOME=/opt/hadoop-2.7.2
 
 before_install:
@@ -30,11 +30,15 @@ before_install:
   - sudo apt-get -y remove --purge postgresql-9.2
   - sudo apt-get -y remove --purge postgresql-9.3
   - sudo apt-get -y remove --purge postgresql-9.4
-  - sudo apt-get -y remove --purge postgis
+  - sudo apt-get -y remove --purge postgresql-9.5
+  - sudo rm -rf /var/lib/postgresql/
+  - sudo rm -rf /var/log/postgresql/
+  - sudo rm -rf /etc/postgresql/
+  - sudo apt-get -y remove --purge postgis-2.2
   - sudo apt-get -y autoremove
 
-  - sudo apt-get -y install postgresql-9.5=9.5.2-3cdb1
-  - sudo apt-get -y install postgresql-server-dev-9.5=9.5.2-3cdb1
+  - sudo apt-get -y install postgresql-9.5=9.5.2-3cdb2
+  - sudo apt-get -y install postgresql-server-dev-9.5=9.5.2-3cdb2
   - sudo apt-get -y install odbcinst
   - sudo apt-get -y install odbc-postgresql
 
@@ -55,9 +59,9 @@ before_install:
   - chmod 0600 ~/.ssh/authorized_keys
   - sudo apt-get -y install openjdk-7-jre
   - wget -P /opt http://apache.rediris.es/hadoop/core/hadoop-2.7.2/hadoop-2.7.2.tar.gz
-  - wget -P /opt http://apache.rediris.es/hive/hive-2.1.0/apache-hive-2.1.0-bin.tar.gz
+  - wget -P /opt http://apache.rediris.es/hive/hive-2.1.1/apache-hive-2.1.1-bin.tar.gz
   - tar -xzvf /opt/hadoop-2.7.2.tar.gz -C /opt
-  - tar -xzvf /opt/apache-hive-2.1.0-bin.tar.gz -C /opt
+  - tar -xzvf /opt/apache-hive-2.1.1-bin.tar.gz -C /opt
   - sed -i -- 's/export JAVA_HOME=${JAVA_HOME}/export JAVA_HOME=\/usr\/lib\/jvm\/java-7-openjdk-amd64/g' $HADOOP_HOME/etc/hadoop/hadoop-env.sh
   - $HADOOP_HOME/bin/hdfs dfs -mkdir /tmp/warehouse
   - $HADOOP_HOME/bin/hdfs dfs -chmod g+w /tmp/warehouse

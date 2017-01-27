@@ -45,5 +45,5 @@ include $(PGXS)
 GENERATED_SQL_FILES = $(wildcard $(TEST_DIR)/sql/*.sql)
 
 integration_tests:
-	bash test/tests-generator.sh
+	bash test/scripts/tests-generator.sh
 	make installcheck

@@ -1,5 +1,5 @@
 language: c
-
+dist: precise
 env:
   global:
     - PAGER=cat
@@ -16,15 +16,16 @@ before_install:
   # Add custom PPAs from cartodb
   - sudo add-apt-repository -y ppa:cartodb/postgresql-9.5
   - sudo add-apt-repository -y ppa:cartodb/odbc
+  # Add PostgreSQL 9.6. Due to we use precise right now, we don't have an odbc for trusty 
+  - sudo add-apt-repository "deb http://apt.postgresql.org/pub/repos/apt/ precise-pgdg main"
+  - wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
   - sudo apt-get update
 
   # Needed for the compilation of odbc_fdw.c
   - sudo apt-get -y install unixodbc-dev
 
-  # Force instalation of libgeos-3.5.0 (presumably needed because of existing version of postgis)
-  #- sudo apt-get -y install libgeos-3.5.0=3.5.0-1cdb2
-
   # Install postgres db and build deps
+  - sudo dpkg -l | grep postgresql
   - sudo /etc/init.d/postgresql stop # stop travis default instance
   - sudo apt-get -y remove --purge postgresql-9.1
   - sudo apt-get -y remove --purge postgresql-9.2
@@ -37,15 +38,24 @@ before_install:
   - sudo apt-get -y remove --purge postgis-2.2
   - sudo apt-get -y autoremove
 
+  # Install PostgreSQL 9.5 from CARTO launchpad
   - sudo apt-get -y install postgresql-9.5=9.5.2-3cdb2
   - sudo apt-get -y install postgresql-server-dev-9.5=9.5.2-3cdb2
+  - sudo /etc/init.d/postgresql stop 9.5
+  # Install PostgreSQL 9.6
+  - sudo apt-get install postgresql-9.6
+  - sudo apt-get install postgresql-server-dev-9.6
+  - sudo /etc/init.d/postgresql stop 9.6
+  - sudo sed -i 's/port = 5433/port = 5432/g' /etc/postgresql/9.6/main/postgresql.conf
+
   - sudo apt-get -y install odbcinst
   - sudo apt-get -y install odbc-postgresql
 
   # configure it to accept local connections from postgres
   - echo -e "# TYPE  DATABASE        USER            ADDRESS                 METHOD \nlocal   all             postgres                                trust\nlocal   all             all                                     trust\nhost    all             all             127.0.0.1/32            trust" \
     | sudo tee /etc/postgresql/9.5/main/pg_hba.conf
-  - sudo /etc/init.d/postgresql restart 9.5
+  - echo -e "# TYPE  DATABASE        USER            ADDRESS                 METHOD \nlocal   all             postgres                                trust\nlocal   all             all                                     trust\nhost    all             all             127.0.0.1/32            trust" \
+    | sudo tee /etc/postgresql/9.6/main/pg_hba.conf
 
   # Local MySQL
   - sudo apt-get -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" install mysql-server-5.5
@@ -62,6 +72,7 @@ before_install:
   - wget -P /opt http://apache.rediris.es/hive/hive-2.1.1/apache-hive-2.1.1-bin.tar.gz
   - tar -xzvf /opt/hadoop-2.7.2.tar.gz -C /opt
   - tar -xzvf /opt/apache-hive-2.1.1-bin.tar.gz -C /opt
+  # We need the two instances of postgresql in the same port
   - sed -i -- 's/export JAVA_HOME=${JAVA_HOME}/export JAVA_HOME=\/usr\/lib\/jvm\/java-7-openjdk-amd64/g' $HADOOP_HOME/etc/hadoop/hadoop-env.sh
   - $HADOOP_HOME/bin/hdfs dfs -mkdir /tmp/warehouse
   - $HADOOP_HOME/bin/hdfs dfs -chmod g+w /tmp/warehouse
@@ -120,8 +131,22 @@ before_install:
   - echo "Setup=/usr/lib/x86_64-linux-gnu/odbc/libtdsS.so" | sudo tee -a /etc/odbcinst.ini
 
 install:
+  # We have to stop and start different versions of postgres because
+  # the tests are port dependant and we don't want to include complexity
+  # in there
+  - sudo /etc/init.d/postgresql start 9.5
   - bash $TRAVIS_BUILD_DIR/test/fixtures/load_all_fixtures.sh
-  - sudo make install
+  - sudo /etc/init.d/postgresql stop 9.5
+  - sudo /etc/init.d/postgresql start 9.6
+  - bash $TRAVIS_BUILD_DIR/test/fixtures/load_all_fixtures.sh
+  - sudo /etc/init.d/postgresql stop 9.6
+  - sudo make clean && sudo make install
+  - sudo PGVERSION=9.6 make clean && sudo PGVERSION=9.6 make install
 
 script:
-  - make integration_tests || { cat test/regression.diffs; false; }
+  # Start and stop postgres is done because the instances share the same port
+  - sudo /etc/init.d/postgresql start 9.5
+  - PGVERSION=9.5 make integration_tests || { cat test/regression.diffs; false; }
+  - sudo /etc/init.d/postgresql stop 9.5
+  - sudo /etc/init.d/postgresql start 9.6
+  - PGVERSION=9.6 make integration_tests || { cat test/regression.diffs; false; }

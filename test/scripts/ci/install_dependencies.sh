@@ -49,5 +49,5 @@ dpkg -i /tmp/hive-odbc-native_2.1.2.1002-2_amd64.deb
 apt-get -y install freetds=1.00.14cdb7
 
 # ODBC installtion ini file
-cp $TRAVIS_BUILD_DIR/test/scripts/travis/odbcinst.ini /etc
+cp $TRAVIS_BUILD_DIR/test/scripts/ci/odbcinst.ini /etc
 

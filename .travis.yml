@@ -34,7 +34,7 @@ before_install:
   - sudo apt-get -y autoremove
 
 install:
-  - sudo bash ./test/scripts/travis/install_dependencies.sh
+  - sudo bash ./test/scripts/ci/install_dependencies.sh
 
   # Add localhost to known hosts file for SSH connection which is done by HADOOP in its initialization
   - echo -e "Host *\n   StrictHostKeyChecking no" | sudo tee ~/.ssh/config
@@ -50,7 +50,7 @@ before_script:
   # Wait 10 seconds for HIVE server to start
   - sleep 10
 
-  - sudo bash ./test/scripts/travis/load_fixtures.sh
+  - sudo bash ./test/scripts/ci/load_fixtures.sh
 
 script:
-  - sudo bash ./test/scripts/travis/integration_tests.sh
+  - sudo bash ./test/scripts/ci/integration_tests.sh

@@ -28,7 +28,7 @@ DATA = odbc_fdw--0.0.1.sql \
 
 TEST_DIR = test/
 REGRESS = $(notdir $(basename $(sort $(wildcard $(TEST_DIR)/sql/*test.sql))))
-REGRESS_OPTS = --inputdir='$(TEST_DIR)' --outputdir='$(TEST_DIR)' --user='postgres' --load-extension=odbc_fdw
+REGRESS_OPTS = --inputdir='$(TEST_DIR)' --outputdir='$(TEST_DIR)' --user='postgres' --load-extension=odbc_fdw --debug
 
 SHLIB_LINK = -lodbc
 
@@ -44,5 +44,4 @@ GENERATED_SQL_FILES = $(wildcard $(TEST_DIR)/sql/*.sql)
 
 integration_tests:
 	bash test/tests-generator.sh
-    cat test/sql/postgres_10_installation_test.sql
 	make installcheck

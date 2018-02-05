@@ -21,6 +21,7 @@ addons:
     - odbc-postgresql  # PgSQL ODBC
     - libmyodbc        # MySQL ODBC
     - freetds-dev      # SQL Server ODBC
+    - freetds-bin      # SQL Server Tools
     
 before_install:
   # Decrypt config files

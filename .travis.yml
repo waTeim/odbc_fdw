@@ -6,20 +6,21 @@ env:
   global:
     - PAGER=cat
     - HIVE_HOME=/opt/apache-hive-2.1.1-bin
-    - HADOOP_HOME=/opt/hadoop-2.7.2
+    - HADOOP_HOME=/opt/hadoop-2.7.5
 
 addons:
   postgresql: '9.5'
   apt:
     packages:
-    - unixodbc-dev
     - postgresql-server-dev-9.5
-    - odbc-postgresql
-    - odbcinst
     - mysql-server-core-5.6
     - mysql-client-5.6
     - mysql-server-5.6
-    - libmyodbc
+    - unixodbc-dev
+    - odbcinst         # ODBC core
+    - odbc-postgresql  # PgSQL ODBC
+    - libmyodbc        # MySQL ODBC
+    - freetds          # SQL Server ODBC
     
 before_install:
   # Decrypt config files
@@ -73,9 +74,9 @@ before_install:
   - cat ~/.ssh/id_dsa.pub >> ~/.ssh/authorized_keys
   - chmod 0600 ~/.ssh/authorized_keys
   - sudo apt-get -y install openjdk-7-jre
-  - wget -P /opt http://apache.rediris.es/hadoop/core/hadoop-2.7.2/hadoop-2.7.2.tar.gz
+  - wget -P /opt http://apache.rediris.es/hadoop/core/hadoop-2.7.5/hadoop-2.7.5.tar.gz
   - wget -P /opt http://apache.rediris.es/hive/hive-2.1.1/apache-hive-2.1.1-bin.tar.gz
-  - tar -xzvf /opt/hadoop-2.7.2.tar.gz -C /opt
+  - tar -xzvf /opt/hadoop-2.7.5.tar.gz -C /opt
   - tar -xzvf /opt/apache-hive-2.1.1-bin.tar.gz -C /opt
   - sed -i -- 's/export JAVA_HOME=${JAVA_HOME}/export JAVA_HOME=\/usr\/lib\/jvm\/java-7-openjdk-amd64/g' $HADOOP_HOME/etc/hadoop/hadoop-env.sh
   - $HADOOP_HOME/bin/hdfs dfs -mkdir /tmp/warehouse
@@ -96,7 +97,7 @@ before_install:
   - sudo dpkg -i /tmp/hive-odbc-native_2.1.2.1002-2_amd64.deb
 
   # SQL Server
-  - sudo apt-get -y install freetds=1.00.14cdb7
+  # - sudo apt-get -y install freetds=1.00.14cdb7
 
   # ODBC installtion ini file
   - echo "[PostgreSQL ANSI]" | sudo tee /etc/odbcinst.ini

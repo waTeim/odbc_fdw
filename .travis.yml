@@ -20,7 +20,7 @@ addons:
     - odbcinst         # ODBC core
     - odbc-postgresql  # PgSQL ODBC
     - libmyodbc        # MySQL ODBC
-    - freetds          # SQL Server ODBC
+    - freetds-dev      # SQL Server ODBC
     
 before_install:
   # Decrypt config files

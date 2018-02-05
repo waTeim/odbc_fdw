@@ -919,7 +919,7 @@ static Oid oid_from_server_name(char *serverName)
   }
 
   sprintf(sql, "SELECT oid FROM pg_foreign_server where srvname = '%s'", serverName);
-  if (ret = SPI_execute(sql, true, 1) != SPI_OK_SELECT) {
+  if ((ret = SPI_execute(sql, true, 1)) != SPI_OK_SELECT) {
     elog(ERROR, "oid_from_server_name: Get server name from Oid query Failed, SP_exec returned %d.", ret);
   }
 
@@ -944,7 +944,7 @@ odbc_table_size(PG_FUNCTION_ARGS)
   char *serverName = text_to_cstring(PG_GETARG_TEXT_PP(0));
   char *tableName = text_to_cstring(PG_GETARG_TEXT_PP(1));
   char *defname = "table";
-  int tableSize;
+  unsigned int tableSize;
   List *tableOptions = NIL;
   Node *val = (Node *) makeString(tableName);
 #if PG_VERSION_NUM >= 100000
@@ -968,7 +968,7 @@ odbc_query_size(PG_FUNCTION_ARGS)
   char *serverName = text_to_cstring(PG_GETARG_TEXT_PP(0));
   char *sqlQuery = text_to_cstring(PG_GETARG_TEXT_PP(1));
   char *defname = "sql_query";
-  int querySize;
+  unsigned int querySize;
   List *queryOptions = NIL;
   Node *val = (Node *) makeString(sqlQuery);
 #if PG_VERSION_NUM >= 100000
@@ -1012,7 +1012,6 @@ Datum odbc_tables_list(PG_FUNCTION_ARGS)
 	SQLHENV env;
 	SQLHDBC dbc;
 	SQLHSTMT stmt;
-	SQLRETURN ret;
   SQLUSMALLINT i;
   SQLUSMALLINT numColumns = 5;
   SQLUSMALLINT bufferSize = 1024;
@@ -1023,7 +1022,6 @@ Datum odbc_tables_list(PG_FUNCTION_ARGS)
   FuncCallContext *funcctx;
   TupleDesc tupdesc;
   TableDataCtx *datafctx;
-  MemoryContext oldcontext;
   DataBinding* tableResult;
   AttInMetadata *attinmeta;
 
@@ -1441,8 +1439,11 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 	/* See if we've got a qual we can push down */
 	if (node->ss.ps.plan->qual)
 	{
+#if PG_VERSION_NUM >= 100000
+        ExprState  *state = node->ss.ps.qual;
+		odbcGetQual((Node *) state->expr, node->ss.ss_currentRelation->rd_att, options.mapping_list, &qual_key, &qual_value, &pushdown);
+#else
 		ListCell    *lc;
-
 		foreach (lc, node->ss.ps.qual)
 		{
 			/* Only the first qual can be pushed down to remote DBMS */
@@ -1451,6 +1452,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 			if (pushdown)
 				break;
 		}
+#endif
 	}
 
 	/* Construct the SQL statement used for remote querying */
@@ -1707,13 +1709,12 @@ odbcIterateForeignScan(ForeignScanState *node)
 					/* The output is incomplete, we need to obtain the rest of the data */
 					char* accum_buffer;
 					size_t accum_buffer_size;
-					size_t accum_used;
+					size_t accum_used = 0;
 					if (indicator == SQL_NO_TOTAL)
 					{
 						/* Unknown total size, must copy part by part */
 						accum_buffer_size = 0;
 						accum_buffer = NULL;
-						accum_used = 0;
 						while (1)
 						{
 							size_t buf_len = buf[col_size] ? col_size + 1 : col_size;

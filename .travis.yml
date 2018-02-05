@@ -1,5 +1,6 @@
 language: c
-
+group: travis_lts
+sudo: required
 env:
   global:
     - PAGER=cat

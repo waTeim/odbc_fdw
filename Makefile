@@ -44,4 +44,5 @@ GENERATED_SQL_FILES = $(wildcard $(TEST_DIR)/sql/*.sql)
 
 integration_tests:
 	bash test/tests-generator.sh
-	make VERBOSE=1 installcheck
+    cat test/sql/postgres_10_installation_test.sql
+	make installcheck

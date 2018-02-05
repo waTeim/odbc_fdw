@@ -16,6 +16,9 @@ addons:
     - postgresql-server-dev-9.5
     - odbc-postgresql
     - odbcinst
+    - mysql-server-core
+    - mysql-client
+    - libmyodbc
     
 before_install:
   # Decrypt config files
@@ -59,8 +62,8 @@ before_install:
   - sudo /etc/init.d/postgresql restart 9.5
 
   # Local MySQL
-  - sudo apt-get -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" install mysql-server-5.5
-  - sudo apt-get -y install libmyodbc
+  # - sudo apt-get -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" install mysql-server-5.5
+  # - sudo apt-get -y install libmyodbc
 
   # Local HIVE installation
   - echo -e "Host *\n   StrictHostKeyChecking no" \

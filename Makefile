@@ -44,4 +44,4 @@ GENERATED_SQL_FILES = $(wildcard $(TEST_DIR)/sql/*.sql)
 
 integration_tests:
 	bash test/tests-generator.sh
-	make installcheck
+	make VERBOSE=1 installcheck

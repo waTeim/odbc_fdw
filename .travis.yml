@@ -103,7 +103,7 @@ before_install:
   - echo "Description = PostgreSQL ODBC driver (ANSI version)" | sudo tee -a /etc/odbcinst.ini
   - echo "Driver      = psqlodbca.so" | sudo tee -a /etc/odbcinst.ini
   - echo "Setup       = libodbcpsqlS.so" | sudo tee -a /etc/odbcinst.ini
-  - echo "Debug       = 0" | sudo tee -a /etc/odbcinst.ini
+  - echo "Debug       = 1" | sudo tee -a /etc/odbcinst.ini
   - echo "CommLog     = 1" | sudo tee -a /etc/odbcinst.ini
   - echo "UsageCount  = 1" | sudo tee -a /etc/odbcinst.ini
   - echo "\n" | sudo tee -a /etc/odbcinst.ini

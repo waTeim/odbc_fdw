@@ -13,15 +13,15 @@ addons:
   apt:
     packages:
     - postgresql-server-dev-9.5
-    # - mysql-server-core-5.6
-    # - mysql-client-5.6
-    # - mysql-server-5.6
+    - mysql-server-core-5.6
+    - mysql-client-5.6
+    - mysql-server-5.6
     - unixodbc-dev
     - odbcinst         # ODBC core
     - odbc-postgresql  # PgSQL ODBC
-    # - libmyodbc        # MySQL ODBC
-    # - freetds-dev      # SQL Server ODBC
-    # - freetds-bin      # SQL Server Tools
+    - libmyodbc        # MySQL ODBC
+    - freetds-dev      # SQL Server ODBC
+    - freetds-bin      # SQL Server Tools
     
 before_install:
   # Decrypt config files

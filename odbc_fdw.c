@@ -17,9 +17,8 @@
  */
 
 /* Debug mode flag */
-/*
-#define DEBUG
-*/
+/* #define DEBUG */
+
 #include "postgres.h"
 #include <string.h>
 
@@ -59,6 +58,13 @@
 #include <sqlext.h>
 
 PG_MODULE_MAGIC;
+
+/* Macro to make conditional DEBUG more terse */
+#ifdef DEBUG
+#define elog_debug(...) elog(DEBUG1, __VA_ARGS__)
+#else
+#define elog_debug(...) 1
+#endif
 
 #define PROCID_TEXTEQ 67
 #define PROCID_TEXTCONST 25
@@ -287,9 +293,7 @@ extract_odbcFdwOptions(List *options_list, odbcFdwOptions *extracted_options)
 {
 	ListCell        *lc;
 
-	#ifdef DEBUG
-		elog(DEBUG1, "extract_init_odbcFdwOptions");
-	#endif
+	elog_debug("%s", __func__);
 
 	init_odbcFdwOptions(extracted_options);
 
@@ -408,9 +412,7 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
 	char  *sql_count    = NULL;
 	ListCell *cell;
 
-	#ifdef DEBUG
-		elog(DEBUG1, "odbc_fdw_validator");
-	#endif
+	elog_debug("%s", __func__);
 
 	/*
 	 * Check that the necessary options: address, port, database
@@ -645,9 +647,7 @@ odbcGetOptions(Oid server_oid, List *add_options, odbcFdwOptions *extracted_opti
 	UserMapping     *mapping;
 	List            *options;
 
-	#ifdef DEBUG
-		elog(DEBUG1, "odbcGetOptions");
-	#endif
+	elog_debug("%s", __func__);
 
   server  = GetForeignServer(server_oid);
 	mapping = GetUserMapping(GetUserId(), server_oid);
@@ -668,9 +668,7 @@ odbcGetTableOptions(Oid foreigntableid, odbcFdwOptions *extracted_options)
 {
 	ForeignTable    *table;
 
-	#ifdef DEBUG
-		elog(DEBUG1, "odbcGetTableOptions");
-	#endif
+	elog_debug("%s", __func__);
 
 	table = GetForeignTable(foreigntableid);
   odbcGetOptions(table->serverid, table->options, extracted_options);
@@ -680,6 +678,7 @@ static void
 check_return(SQLRETURN ret, char *msg, SQLHANDLE handle, SQLSMALLINT type)
 {
 	int err_code = ERRCODE_SYSTEM_ERROR;
+
 	#ifdef DEBUG
 		SQLINTEGER   i = 0;
 		SQLINTEGER   native;
@@ -719,9 +718,7 @@ getNameQualifierChar(SQLHDBC dbc, StringInfoData *nq_char)
 {
 	SQLCHAR name_qualifier_char[2];
 
-	#ifdef DEBUG
-		elog(DEBUG1, "getNameQualifierChar");
-	#endif
+	elog_debug("%s", __func__);
 
 	SQLGetInfo(dbc,
 	           SQL_CATALOG_NAME_SEPARATOR,
@@ -742,9 +739,7 @@ getQuoteChar(SQLHDBC dbc, StringInfoData *q_char)
 {
 	SQLCHAR quote_char[2];
 
-	#ifdef DEBUG
-		elog(DEBUG1, "getQuoteChar");
-	#endif
+	elog_debug("%s", __func__);
 
 	SQLGetInfo(dbc,
 	           SQL_IDENTIFIER_QUOTE_CHAR,
@@ -782,9 +777,7 @@ static void odbcConnStr(StringInfoData *conn_str, odbcFdwOptions* options)
 		DefElem *def = (DefElem *) lfirst(lc);
 		sep = appendConnAttribute(sep, conn_str, get_odbc_attribute_name(def->defname), defGetString(def));
 	}
-	#ifdef DEBUG
-		elog(DEBUG1,"CONN STR: %s", conn_str->data);
-	#endif
+	elog_debug("CONN STR: %s", conn_str->data);
 }
 
 /*
@@ -855,9 +848,7 @@ odbcGetTableSize(odbcFdwOptions* options, unsigned int *size)
 		appendStringInfo(&sql_str, "%s", options->sql_count);
 	}
 
-    #ifdef DEBUG
-		elog(DEBUG1, "Count query: %s", sql_str.data);
-	#endif
+	elog_debug("Count query: %s", sql_str.data);
 
 	ret = SQLExecDirect(stmt, (SQLCHAR *) sql_str.data, SQL_NTS);
     check_return(ret, "Executing ODBC query", stmt, SQL_HANDLE_STMT);
@@ -869,9 +860,7 @@ odbcGetTableSize(odbcFdwOptions* options, unsigned int *size)
 		if (SQL_SUCCEEDED(ret))
 		{
 			*size = (unsigned int) table_size;
-			#ifdef DEBUG
-				elog(DEBUG1, "Count query result: %lu", table_size);
-			#endif
+			elog_debug(DEBUG1, "Count query result: %lu", table_size);
 		}
 	}
 	else
@@ -1106,9 +1095,7 @@ odbcGetQual(Node *node, TupleDesc tupdesc, List *col_mapping_list, char **key, c
 	*value = NULL;
 	*pushdown = false;
 
-	#ifdef DEBUG
-		elog(DEBUG1, "odbcGetQual");
-	#endif
+	elog_debug("%s", __func__);
 
     if (!node)
 		return;
@@ -1180,9 +1167,7 @@ odbcIsValidOption(const char *option, Oid context)
 {
 	struct odbcFdwOption *opt;
 
-	#ifdef DEBUG
-		elog(DEBUG1, "odbcIsValidOption");
-	#endif
+	elog_debug("%s", __func__);
 
 	/* Check if the options presents in the valid option list */
 	for (opt = valid_options; opt->optname; opt++)
@@ -1209,9 +1194,7 @@ static void odbcGetForeignRelSize(PlannerInfo *root, RelOptInfo *baserel, Oid fo
 	unsigned int table_size   = 0;
 	odbcFdwOptions options;
 
-	#ifdef DEBUG
-		elog(DEBUG1, "odbcGetForeignRelSize");
-	#endif
+	elog_debug("%s", __func__);
 
 	/* Fetch the foreign table options */
 	odbcGetTableOptions(foreigntableid, &options);
@@ -1227,9 +1210,7 @@ static void odbcEstimateCosts(PlannerInfo *root, RelOptInfo *baserel, Cost *star
 	unsigned int table_size   = 0;
 	odbcFdwOptions options;
 
-	#ifdef DEBUG
-		elog(DEBUG1, "----> finishing odbcEstimateCosts");
-	#endif
+	elog_debug("----> starting %s", __func__);
 
 	/* Fetch the foreign table options */
 	odbcGetTableOptions(foreigntableid, &options);
@@ -1240,11 +1221,7 @@ static void odbcEstimateCosts(PlannerInfo *root, RelOptInfo *baserel, Cost *star
 
 	*total_cost = baserel->rows + *startup_cost;
 
-	#ifdef DEBUG
-		ereport(DEBUG1,
-		        (errmsg("----> finishing odbcEstimateCosts")
-		       ));
-	#endif
+    elog_debug("----> finishing %s", __func__);
 
 }
 
@@ -1253,11 +1230,7 @@ static void odbcGetForeignPaths(PlannerInfo *root, RelOptInfo *baserel, Oid fore
 	Cost startup_cost;
 	Cost total_cost;
 
-	#ifdef DEBUG
-		ereport(DEBUG,
-		        (errmsg("----> starting odbcGetForeignPaths")
-		       ));
-	#endif
+	elog_debug("----> starting %s", __func__);
 
 	odbcEstimateCosts(root, baserel, &startup_cost, &total_cost, foreigntableid);
 
@@ -1265,26 +1238,13 @@ static void odbcGetForeignPaths(PlannerInfo *root, RelOptInfo *baserel, Oid fore
 	         (Path *) create_foreignscan_path(root, baserel, baserel->rows, startup_cost, total_cost,
 	         NIL, NULL, NULL, NIL /* no fdw_private list */));
 
-	#ifdef DEBUG
-		ereport(DEBUG1,
-		        (errmsg("----> finishing odbcGetForeignPaths")
-		       ));
-	#endif
+    elog_debug("----> finishing %s", __func__);
 }
 
 static bool odbcAnalyzeForeignTable(Relation relation, AcquireSampleRowsFunc *func, BlockNumber *totalpages)
 {
-	#ifdef DEBUG
-		ereport(DEBUG,
-		        (errmsg("----> starting odbcAnalyzeForeignTable")
-		       ));
-	#endif
-
-	#ifdef DEBUG
-		ereport(DEBUG1,
-		        (errmsg("----> finishing odbcAnalyzeForeignTable")
-		       ));
-	#endif
+	elog_debug("----> starting %s", __func__);
+    elog_debug("----> finishing %s", __func__);
 
 	return false;
 }
@@ -1293,19 +1253,11 @@ static ForeignScan* odbcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel,
 	Oid foreigntableid, ForeignPath *best_path, List *tlist, List *scan_clauses, Plan *outer_plan)
 {
 	Index scan_relid = baserel->relid;
-	#ifdef DEBUG
-		ereport(DEBUG,
-		        (errmsg("----> starting odbcGetForeignPlan")
-		       ));
-	#endif
+	elog_debug("----> starting %s", __func__);
 
 	scan_clauses = extract_actual_clauses(scan_clauses, false);
 
-	#ifdef DEBUG
-		ereport(DEBUG1,
-		        (errmsg("----> finishing odbcGetForeignPlan")
-		       ));
-	#endif
+    elog_debug("----> finishing %s", __func__);
 
 	return make_foreignscan(tlist, scan_clauses,
 	                        scan_relid, NIL, NIL,
@@ -1354,9 +1306,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 	const char* schema_name;
 	int encoding = -1;
 
-	#ifdef DEBUG
-		elog(DEBUG1, "odbcBeginForeignScan");
-	#endif
+	elog_debug("%s", __func__);
 
 	/* Fetch the foreign table options */
 	odbcGetTableOptions(RelationGetRelid(node->ss.ss_currentRelation), &options);
@@ -1468,9 +1418,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 	/* Allocate a statement handle */
 	SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
 
-    #ifdef DEBUG
-		elog(DEBUG1, "Executing query: %s", sql.data);
-	#endif
+	elog_debug("Executing query: %s", sql.data);
 
 	/* Retrieve a list of rows */
 	ret = SQLExecDirect(stmt, (SQLCHAR *) sql.data, SQL_NTS);
@@ -1515,9 +1463,7 @@ odbcIterateForeignScan(ForeignScanState *node)
 	List *col_size_array = NIL;
 	List *col_conversion_array = NIL;
 
-	#ifdef DEBUG
-		elog(DEBUG1, "odbcIterateForeignScan");
-	#endif
+	elog_debug("%s", __func__);
 
 	ret = SQLFetch(stmt);
 
@@ -1805,9 +1751,7 @@ odbcExplainForeignScan(ForeignScanState *node, ExplainState *es)
 	odbcFdwExecutionState *festate;
 	unsigned int table_size = 0;
 
-	#ifdef DEBUG
-		elog(DEBUG1, "odbcExplainForeignScan");
-	#endif
+	elog_debug("%s", __func__);
 
 	festate = (odbcFdwExecutionState *) node->fdw_state;
 
@@ -1829,9 +1773,7 @@ odbcEndForeignScan(ForeignScanState *node)
 {
 	odbcFdwExecutionState *festate;
 
-	#ifdef DEBUG
-		elog(DEBUG1, "odbcEndForeignScan");
-	#endif
+	elog_debug("%s", __func__);
 
 	/* if festate is NULL, we are in EXPLAIN; nothing to do */
 	festate = (odbcFdwExecutionState *) node->fdw_state;
@@ -1852,9 +1794,7 @@ odbcEndForeignScan(ForeignScanState *node)
 static void
 odbcReScanForeignScan(ForeignScanState *node)
 {
-	#ifdef DEBUG
-		elog(DEBUG1, "odbcReScanForeignScan");
-	#endif
+	elog_debug("%s", __func__);
 }
 
 
@@ -1931,9 +1871,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 	const char* schema_name;
 	bool missing_foreign_schema = FALSE;
 
-	#ifdef DEBUG
-		elog(DEBUG1, "odbcImportForeignSchema");
-	#endif
+	elog_debug("%s", __func__);
 
 	odbcGetOptions(serverOid, stmt->options, &options);
 

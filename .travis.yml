@@ -18,7 +18,7 @@ addons:
     - mysql-server-5.6
     - unixodbc-dev
     - odbcinst         # ODBC core
-    - odbc-postgresql  # PgSQL ODBC
+    - odbc-postgresql=1:09.02.0100-2ubuntu1  # PgSQL ODBC
     - libmyodbc        # MySQL ODBC
     - freetds-dev      # SQL Server ODBC
     - freetds-bin      # SQL Server Tools

@@ -9,10 +9,12 @@ env:
     - HADOOP_HOME=/opt/hadoop-2.7.5
 
 addons:
-  postgresql: '10'
+  postgresql: '9.5'
   apt:
+    sources:
+      - sourceline: 'ppa:cartodb/odbc'
     packages:
-    - postgresql-server-dev-10
+    - postgresql-server-dev-9.5
     - mysql-server-core-5.6
     - mysql-client-5.6
     - mysql-server-5.6
@@ -20,9 +22,7 @@ addons:
     - odbcinst         # ODBC core
     - odbc-postgresql=1:09.02.0100-2ubuntu1  # PgSQL ODBC
     - libmyodbc        # MySQL ODBC
-    - freetds-dev      # SQL Server ODBC
-    - freetds-bin      # SQL Server Tools
-    - tdsodbc          # FreeTDS driver
+    - freetds # Custom package to use freetds >= 1.x in trusty
 
 before_install:
   # Decrypt config files
@@ -31,29 +31,18 @@ before_install:
   - openssl aes-256-cbc -K $encrypted_d52b986e6313_key -iv $encrypted_d52b986e6313_iv -in $TRAVIS_BUILD_DIR/test/config/mysql.config.enc -out $TRAVIS_BUILD_DIR/test/config/mysql.config -d
   - openssl aes-256-cbc -K $encrypted_d52b986e6313_key -iv $encrypted_d52b986e6313_iv -in $TRAVIS_BUILD_DIR/test/config/sqlserver.config.enc -out $TRAVIS_BUILD_DIR/test/config/sqlserver.config -d
 
-  # Add custom PPAs from cartodb
-  # - sudo add-apt-repository -y ppa:cartodb/postgresql-9.5
-  # - sudo add-apt-repository -y ppa:cartodb/odbc
-  # - sudo apt-get update
-
   # Install postgres db and build deps
   - sudo /etc/init.d/postgresql stop # stop travis default instance
   - sudo apt-get -y remove --purge postgresql-9.2
   - sudo apt-get -y remove --purge postgresql-9.3
   - sudo apt-get -y remove --purge postgresql-9.4
-  - sudo apt-get -y remove --purge postgresql-9.5
   - sudo apt-get -y remove --purge postgresql-9.6
-  - sudo rm -rf /var/lib/postgresql/
-  - sudo rm -rf /var/log/postgresql/
-  - sudo rm -rf /etc/postgresql/
   - sudo apt-get -y remove --purge postgis-2.2
   - sudo apt-get -y autoremove
 
-  - sudo apt-get -y install postgresql-10
-
   # configure it to accept local connections from postgres
-  - echo -e "# TYPE  DATABASE        USER            ADDRESS                 METHOD \nlocal   all             postgres                                trust\nlocal   all             all                                     trust\nhost    all             all             127.0.0.1/32            trust" | sudo tee /etc/postgresql/10/main/pg_hba.conf
-  - sudo /etc/init.d/postgresql restart 10
+  - echo -e "# TYPE  DATABASE        USER            ADDRESS                 METHOD \nlocal   all             postgres                                trust\nlocal   all             all                                     trust\nhost    all             all             127.0.0.1/32            trust" | sudo tee /etc/postgresql/9.5/main/pg_hba.conf
+  - sudo /etc/init.d/postgresql restart 9.5
 
   # Local HIVE installation
   - echo -e "Host *\n   StrictHostKeyChecking no" | sudo tee ~/.ssh/config
@@ -82,9 +71,6 @@ before_install:
   - sudo apt-get install libsasl2-modules-gssapi-mit
   - wget --quiet --directory-prefix=/tmp http://public-repo-1.hortonworks.com/HDP/hive-odbc/2.1.2.1002/debian/hive-odbc-native_2.1.2.1002-2_amd64.deb
   - sudo dpkg -i /tmp/hive-odbc-native_2.1.2.1002-2_amd64.deb
-
-  # SQL Server
-  # - sudo apt-get -y install freetds=1.00.14cdb7
 
   # ODBC installation ini file
   - echo "[PostgreSQL ANSI]" | sudo tee /etc/odbcinst.ini
@@ -119,7 +105,7 @@ before_install:
   - echo "Description=Hortonworks Hive ODBC Driver (64-bit)" | sudo tee -a /etc/odbcinst.ini
   - echo "Driver=/usr/lib/hive/lib/native/Linux-amd64-64/libhortonworkshiveodbc64.so" | sudo tee -a /etc/odbcinst.ini
   - echo "[FreeTDS]" | sudo tee -a /etc/odbcinst.ini
-  - echo "Driver=/usr/lib/x86_64-linux-gnu/odbc/libtdsodbc.so" | sudo tee -a /etc/odbcinst.ini
+  - echo "Driver=/usr/lib/x86_64-linux-gnu/libtdsodbc.so" | sudo tee -a /etc/odbcinst.ini
   - echo "Setup=/usr/lib/x86_64-linux-gnu/odbc/libtdsS.so" | sudo tee -a /etc/odbcinst.ini
 
 install:
@@ -131,11 +117,11 @@ install:
   - psql -U postgres -d fdw_tests -c "select * from pg_user_mapping"
   - psql -U postgres -d fdw_tests -c "select * from pg_foreign_table"
   - psql -U postgres -c "select * from pg_foreign_data_wrapper"
-  - ls -l /usr/lib/*odbc*
   - sudo make install
 
 script:
   - make integration_tests || { cat test/regression.diffs; false; }
 
 after_failure:
-  - sudo cat /var/log/postgresql/postgresql-10-main.log
+  - sudo cat /var/log/postgresql/postgresql-9.5-main.log
+

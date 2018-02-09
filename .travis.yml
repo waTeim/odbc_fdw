@@ -36,15 +36,9 @@ before_install:
   - sudo apt-get -y remove --purge postgresql-9.2
   - sudo apt-get -y remove --purge postgresql-9.3
   - sudo apt-get -y remove --purge postgresql-9.4
-  - sudo apt-get -y remove --purge postgresql-9.5
   - sudo apt-get -y remove --purge postgresql-9.6
-  - sudo rm -rf /var/lib/postgresql/
-  - sudo rm -rf /var/log/postgresql/
-  - sudo rm -rf /etc/postgresql/
   - sudo apt-get -y remove --purge postgis-2.2
   - sudo apt-get -y autoremove
-
-  - sudo apt-get -y install postgresql-9.5
 
   # configure it to accept local connections from postgres
   - echo -e "# TYPE  DATABASE        USER            ADDRESS                 METHOD \nlocal   all             postgres                                trust\nlocal   all             all                                     trust\nhost    all             all             127.0.0.1/32            trust" | sudo tee /etc/postgresql/9.5/main/pg_hba.conf

@@ -28,7 +28,7 @@ DATA = odbc_fdw--0.0.1.sql \
 
 TEST_DIR = test/
 REGRESS = $(notdir $(basename $(sort $(wildcard $(TEST_DIR)/sql/*test.sql))))
-REGRESS_OPTS = --inputdir='$(TEST_DIR)' --outputdir='$(TEST_DIR)' --user='postgres' --load-extension=odbc_fdw --debug
+REGRESS_OPTS = --inputdir='$(TEST_DIR)' --outputdir='$(TEST_DIR)' --user='postgres' --load-extension=odbc_fdw
 
 SHLIB_LINK = -lodbc
 

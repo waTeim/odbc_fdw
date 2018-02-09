@@ -760,14 +760,14 @@ static bool appendConnAttribute(bool sep, StringInfoData *conn_str, const char* 
 		if (sep)
 			appendStringInfoString(conn_str, sep_str);
 		appendStringInfo(conn_str, "%s=%s", name, value);
-		sep = TRUE;
+		sep = true;
 	}
 	return sep;
 }
 
 static void odbcConnStr(StringInfoData *conn_str, odbcFdwOptions* options)
 {
-	bool sep = FALSE;
+	bool sep = false;
 	ListCell *lc;
 
 	initStringInfo(conn_str);
@@ -908,7 +908,7 @@ static Oid oid_from_server_name(char *serverName)
   }
 
   sprintf(sql, "SELECT oid FROM pg_foreign_server where srvname = '%s'", serverName);
-  if (ret = SPI_execute(sql, true, 1) != SPI_OK_SELECT) {
+  if ((ret = SPI_execute(sql, true, 1)) != SPI_OK_SELECT) {
     elog(ERROR, "oid_from_server_name: Get server name from Oid query Failed, SP_exec returned %d.", ret);
   }
 
@@ -933,10 +933,14 @@ odbc_table_size(PG_FUNCTION_ARGS)
   char *serverName = text_to_cstring(PG_GETARG_TEXT_PP(0));
   char *tableName = text_to_cstring(PG_GETARG_TEXT_PP(1));
   char *defname = "table";
-  int tableSize;
+  unsigned int tableSize;
   List *tableOptions = NIL;
   Node *val = (Node *) makeString(tableName);
+#if PG_VERSION_NUM >= 100000
+  DefElem *elem = (DefElem *) makeDefElem(defname, val, -1);
+#else
   DefElem *elem = (DefElem *) makeDefElem(defname, val);
+#endif
 
   tableOptions = lappend(tableOptions, elem);
   Oid serverOid = oid_from_server_name(serverName);
@@ -953,10 +957,14 @@ odbc_query_size(PG_FUNCTION_ARGS)
   char *serverName = text_to_cstring(PG_GETARG_TEXT_PP(0));
   char *sqlQuery = text_to_cstring(PG_GETARG_TEXT_PP(1));
   char *defname = "sql_query";
-  int querySize;
+  unsigned int querySize;
   List *queryOptions = NIL;
   Node *val = (Node *) makeString(sqlQuery);
+#if PG_VERSION_NUM >= 100000
+  DefElem *elem = (DefElem *) makeDefElem(defname, val, -1);
+#else
   DefElem *elem = (DefElem *) makeDefElem(defname, val);
+#endif
 
   queryOptions = lappend(queryOptions, elem);
   Oid serverOid = oid_from_server_name(serverName);
@@ -993,7 +1001,6 @@ Datum odbc_tables_list(PG_FUNCTION_ARGS)
 	SQLHENV env;
 	SQLHDBC dbc;
 	SQLHSTMT stmt;
-	SQLRETURN ret;
   SQLUSMALLINT i;
   SQLUSMALLINT numColumns = 5;
   SQLUSMALLINT bufferSize = 1024;
@@ -1004,7 +1011,6 @@ Datum odbc_tables_list(PG_FUNCTION_ARGS)
   FuncCallContext *funcctx;
   TupleDesc tupdesc;
   TableDataCtx *datafctx;
-  MemoryContext oldcontext;
   DataBinding* tableResult;
   AttInMetadata *attinmeta;
 
@@ -1235,8 +1241,17 @@ static void odbcGetForeignPaths(PlannerInfo *root, RelOptInfo *baserel, Oid fore
 	odbcEstimateCosts(root, baserel, &startup_cost, &total_cost, foreigntableid);
 
 	add_path(baserel,
-	         (Path *) create_foreignscan_path(root, baserel, baserel->rows, startup_cost, total_cost,
-	         NIL, NULL, NULL, NIL /* no fdw_private list */));
+	         (Path *) create_foreignscan_path(root, baserel, 
+#if PG_VERSION_NUM >= 90600
+             NULL, /* PathTarget */
+#endif
+			 baserel->rows, 
+			 startup_cost, 
+			 total_cost,
+	         NIL, /* no pathkeys */
+			 NULL, /* no outer rel either */
+			 NULL, /* no extra plan */
+			 NIL /* no fdw_private list */));
 
     elog_debug("----> finishing %s", __func__);
 }
@@ -1301,7 +1316,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 
 	char *qual_key         = NULL;
 	char *qual_value       = NULL;
-	bool pushdown          = FALSE;
+	bool pushdown          = false;
 
 	const char* schema_name;
 	int encoding = -1;
@@ -1347,7 +1362,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 		/* retrieve the column name */
 		initStringInfo(&col);
 		appendStringInfo(&col, "%s", NameStr(rel->rd_att->attrs[i]->attname));
-		mapped = FALSE;
+		mapped = false;
 
 		/* check if the column name is mapping to a different name in remote table */
 		foreach(col_mapping, options.mapping_list)
@@ -1357,7 +1372,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 			{
 				initStringInfo(&mapping);
 				appendStringInfo(&mapping, "%s", defGetString(def));
-				mapped = TRUE;
+				mapped = true;
 				break;
 			}
 		}
@@ -1374,8 +1389,11 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 	/* See if we've got a qual we can push down */
 	if (node->ss.ps.plan->qual)
 	{
+#if PG_VERSION_NUM >= 100000
+        ExprState  *state = node->ss.ps.qual;
+		odbcGetQual((Node *) state->expr, node->ss.ss_currentRelation->rd_att, options.mapping_list, &qual_key, &qual_value, &pushdown);
+#else
 		ListCell    *lc;
-
 		foreach (lc, node->ss.ps.qual)
 		{
 			/* Only the first qual can be pushed down to remote DBMS */
@@ -1384,6 +1402,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 			if (pushdown)
 				break;
 		}
+#endif
 	}
 
 	/* Construct the SQL statement used for remote querying */
@@ -1432,7 +1451,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 	festate->table_columns = columns;
 	festate->num_of_table_cols = num_of_columns;
 	/* prepare for the first iteration, there will be some precalculation needed in the first iteration*/
-	festate->first_iteration = TRUE;
+	festate->first_iteration = true;
 	festate->encoding = encoding;
 	node->fdw_state = (void *) festate;
 }
@@ -1473,7 +1492,7 @@ odbcIterateForeignScan(ForeignScanState *node)
 	 * If this is the first iteration,
 	 * we need to calculate the mask for column mapping as well as the column size
 	 */
-	if (first_iteration == TRUE)
+	if (first_iteration == true)
 	{
 		SQLCHAR *ColumnName;
 		SQLSMALLINT NameLengthPtr;
@@ -1498,7 +1517,7 @@ odbcIterateForeignScan(ForeignScanState *node)
 		for (i = 1; i <= columns; i++)
 		{
 			ColumnConversion conversion = TEXT_CONVERSION;
-			found = FALSE;
+			found = false;
 			ColumnName = (SQLCHAR *) palloc(sizeof(SQLCHAR) * MAXIMUM_COLUMN_NAME_LEN);
 			SQLDescribeCol(stmt,
 			               i,                       /* ColumnName */
@@ -1531,7 +1550,7 @@ odbcIterateForeignScan(ForeignScanState *node)
 				{
 					SQLULEN min_size = minimum_buffer_size(DataTypePtr);
 					SQLULEN max_size = MAXIMUM_BUFFER_SIZE;
-					found = TRUE;
+					found = true;
 					col_position_mask = lappend_int(col_position_mask, k);
 					if (ColumnSizePtr < min_size)
 						ColumnSizePtr = min_size;
@@ -1556,7 +1575,7 @@ odbcIterateForeignScan(ForeignScanState *node)
 		festate->col_position_mask = col_position_mask;
 		festate->col_size_array = col_size_array;
 		festate->col_conversion_array = col_conversion_array;
-		festate->first_iteration = FALSE;
+		festate->first_iteration = false;
 
 		MemoryContextSwitchTo(prev_context);
 	}
@@ -1636,13 +1655,12 @@ odbcIterateForeignScan(ForeignScanState *node)
 					/* The output is incomplete, we need to obtain the rest of the data */
 					char* accum_buffer;
 					size_t accum_buffer_size;
-					size_t accum_used;
+					size_t accum_used = 0;
 					if (indicator == SQL_NO_TOTAL)
 					{
 						/* Unknown total size, must copy part by part */
 						accum_buffer_size = 0;
 						accum_buffer = NULL;
-						accum_used = 0;
 						while (1)
 						{
 							size_t buf_len = buf[col_size] ? col_size + 1 : col_size;
@@ -1869,7 +1887,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 	StringInfoData sql_type;
 	SQLLEN indicator;
 	const char* schema_name;
-	bool missing_foreign_schema = FALSE;
+	bool missing_foreign_schema = false;
 
 	elog_debug("%s", __func__);
 
@@ -1879,7 +1897,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 	if (schema_name == NULL)
 	{
 		schema_name = stmt->remote_schema;
-		missing_foreign_schema = TRUE;
+		missing_foreign_schema = true;
 	}
 	else if (is_blank_string(schema_name))
 	{
@@ -1973,7 +1991,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 				ret = SQLFetch(tables_stmt);
 				if (SQL_SUCCESS == ret)
 				{
-					int excluded = FALSE;
+					int excluded = false;
 					TableName = (SQLCHAR *) palloc(sizeof(SQLCHAR) * MAXIMUM_TABLE_NAME_LEN);
 					ret = SQLGetData(tables_stmt, SQLTABLES_NAME_COLUMN, SQL_C_CHAR, TableName, MAXIMUM_TABLE_NAME_LEN, &indicator);
 					check_return(ret, "Reading table name", tables_stmt, SQL_HANDLE_STMT);
@@ -1990,7 +2008,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 					{
 						if (!is_blank_string((char*)table_schema) && strcmp((char*)table_schema, schema_name) )
 						{
-							excluded = TRUE;
+							excluded = true;
 						}
 					}
 					else
@@ -2018,7 +2036,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 							table_rangevar = (RangeVar*)lfirst(tables_cell);
 							if (strcmp((char*)TableName, table_rangevar->relname) == 0)
 							{
-								excluded = TRUE;
+								excluded = true;
 							}
 						}
 					}

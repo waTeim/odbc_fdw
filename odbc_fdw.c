@@ -1227,7 +1227,7 @@ static void odbcEstimateCosts(PlannerInfo *root, RelOptInfo *baserel, Cost *star
 
 	*total_cost = baserel->rows + *startup_cost;
 
-    elog_debug("----> finishing %s", __func__);
+	elog_debug("----> finishing %s", __func__);
 
 }
 
@@ -1253,13 +1253,13 @@ static void odbcGetForeignPaths(PlannerInfo *root, RelOptInfo *baserel, Oid fore
 			 NULL, /* no extra plan */
 			 NIL /* no fdw_private list */));
 
-    elog_debug("----> finishing %s", __func__);
+	elog_debug("----> finishing %s", __func__);
 }
 
 static bool odbcAnalyzeForeignTable(Relation relation, AcquireSampleRowsFunc *func, BlockNumber *totalpages)
 {
 	elog_debug("----> starting %s", __func__);
-    elog_debug("----> finishing %s", __func__);
+	elog_debug("----> finishing %s", __func__);
 
 	return false;
 }
@@ -1272,7 +1272,7 @@ static ForeignScan* odbcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel,
 
 	scan_clauses = extract_actual_clauses(scan_clauses, false);
 
-    elog_debug("----> finishing %s", __func__);
+	elog_debug("----> finishing %s", __func__);
 
 	return make_foreignscan(tlist, scan_clauses,
 	                        scan_relid, NIL, NIL,

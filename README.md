@@ -20,6 +20,14 @@ To make use of the extension ODBC drivers for the data sources to
 be used must be installed in the system and reflected
 in the `/etc/odbcinst.ini` file.
 
+Driver requirements
+--------------------
+
+- odbc-postgreql: 9.x
+- libmyodbc: >=  5.1
+- FreeTDS: >= 1.0
+- hive-odbc-native: >= 2.1
+
 Building and Installing
 -----------------------
 

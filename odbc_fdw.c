@@ -17,9 +17,8 @@
  */
 
 /* Debug mode flag */
-/*
-#define DEBUG
-*/
+/* #define DEBUG */
+
 #include "postgres.h"
 #include <string.h>
 
@@ -59,6 +58,13 @@
 #include <sqlext.h>
 
 PG_MODULE_MAGIC;
+
+/* Macro to make conditional DEBUG more terse */
+#ifdef DEBUG
+#define elog_debug(...) elog(DEBUG1, __VA_ARGS__)
+#else
+#define elog_debug(...) 1
+#endif
 
 #define PROCID_TEXTEQ 67
 #define PROCID_TEXTCONST 25
@@ -287,9 +293,7 @@ extract_odbcFdwOptions(List *options_list, odbcFdwOptions *extracted_options)
 {
 	ListCell        *lc;
 
-	#ifdef DEBUG
-		elog(DEBUG1, "extract_init_odbcFdwOptions");
-	#endif
+	elog_debug("%s", __func__);
 
 	init_odbcFdwOptions(extracted_options);
 
@@ -408,9 +412,7 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
 	char  *sql_count    = NULL;
 	ListCell *cell;
 
-	#ifdef DEBUG
-		elog(DEBUG1, "odbc_fdw_validator");
-	#endif
+	elog_debug("%s", __func__);
 
 	/*
 	 * Check that the necessary options: address, port, database
@@ -481,9 +483,9 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
 		{
 			if (sql_query)
 				ereport(ERROR,
-				       (errcode(ERRCODE_SYNTAX_ERROR),
-			            errmsg("conflicting or redundant options: sql_query (%s)", defGetString(def))
-			           ));
+				        (errcode(ERRCODE_SYNTAX_ERROR),
+				         errmsg("conflicting or redundant options: sql_query (%s)", defGetString(def))
+				        ));
 
 			sql_query = defGetString(def);
 		}
@@ -507,97 +509,97 @@ odbc_fdw_validator(PG_FUNCTION_ARGS)
  */
 static void
 sql_data_type(
-	SQLSMALLINT odbc_data_type,
-	SQLULEN     column_size,
-	SQLSMALLINT decimal_digits,
-	SQLSMALLINT nullable,
-	StringInfo sql_type
+    SQLSMALLINT odbc_data_type,
+    SQLULEN     column_size,
+    SQLSMALLINT decimal_digits,
+    SQLSMALLINT nullable,
+    StringInfo sql_type
 )
 {
 	initStringInfo(sql_type);
 	switch(odbc_data_type)
 	{
-		case SQL_CHAR:
-		case SQL_WCHAR :
-			appendStringInfo(sql_type, "char(%u)", (unsigned)column_size);
-			break;
-		case SQL_VARCHAR :
-		case SQL_WVARCHAR :
-			if (column_size <= 255)
-			{
-				appendStringInfo(sql_type, "varchar(%u)", (unsigned)column_size);
-			}
-			else
-			{
-				appendStringInfo(sql_type, "text");
-			}
-			break;
-		case SQL_LONGVARCHAR :
-		case SQL_WLONGVARCHAR :
+	case SQL_CHAR:
+	case SQL_WCHAR :
+		appendStringInfo(sql_type, "char(%u)", (unsigned)column_size);
+		break;
+	case SQL_VARCHAR :
+	case SQL_WVARCHAR :
+		if (column_size <= 255)
+		{
+			appendStringInfo(sql_type, "varchar(%u)", (unsigned)column_size);
+		}
+		else
+		{
 			appendStringInfo(sql_type, "text");
-			break;
-		case SQL_DECIMAL :
-			appendStringInfo(sql_type, "decimal(%u,%d)", (unsigned)column_size, decimal_digits);
-			break;
-		case SQL_NUMERIC :
-			appendStringInfo(sql_type, "numeric(%u,%d)", (unsigned)column_size, decimal_digits);
-			break;
-		case SQL_INTEGER :
-			appendStringInfo(sql_type, "integer");
-			break;
-		case SQL_REAL :
-			appendStringInfo(sql_type, "real");
-			break;
-		case SQL_FLOAT :
-			appendStringInfo(sql_type, "real");
-			break;
-		case SQL_DOUBLE :
-		   appendStringInfo(sql_type, "float8");
-			break;
-		case SQL_BIT :
-			/* Use boolean instead of bit(1) because:
-			 * * binary types are not yet fully supported
-			 * * boolean is more commonly used in PG
-			 * * With options BoolsAsChar=0 this allows
-			 *   preserving boolean columns from pSQL ODBC.
-			 */
-			appendStringInfo(sql_type, "boolean");
-			break;
-		case SQL_SMALLINT :
-		case SQL_TINYINT :
-			appendStringInfo(sql_type, "smallint");
-			break;
-		case SQL_BIGINT :
-			appendStringInfo(sql_type, "bigint");
-			break;
-		/*
-		 * TODO: Implement these cases properly. See #23
-		 *
-		case SQL_BINARY :
-			appendStringInfo(sql_type, "bit(%u)", (unsigned)column_size);
-			break;
-		case SQL_VARBINARY :
-			appendStringInfo(sql_type, "varbit(%u)", (unsigned)column_size);
-			break;
-		*/
-		case SQL_LONGVARBINARY :
-			appendStringInfo(sql_type, "bytea");
-			break;
-		case SQL_TYPE_DATE :
-		case SQL_DATE :
-			appendStringInfo(sql_type, "date");
-			break;
-		case SQL_TYPE_TIME :
-		case SQL_TIME :
-			appendStringInfo(sql_type, "time");
-			break;
-		case SQL_TYPE_TIMESTAMP :
-		case SQL_TIMESTAMP :
-			appendStringInfo(sql_type, "timestamp");
-			break;
-		case SQL_GUID :
-			appendStringInfo(sql_type, "uuid");
-			break;
+		}
+		break;
+	case SQL_LONGVARCHAR :
+	case SQL_WLONGVARCHAR :
+		appendStringInfo(sql_type, "text");
+		break;
+	case SQL_DECIMAL :
+		appendStringInfo(sql_type, "decimal(%u,%d)", (unsigned)column_size, decimal_digits);
+		break;
+	case SQL_NUMERIC :
+		appendStringInfo(sql_type, "numeric(%u,%d)", (unsigned)column_size, decimal_digits);
+		break;
+	case SQL_INTEGER :
+		appendStringInfo(sql_type, "integer");
+		break;
+	case SQL_REAL :
+		appendStringInfo(sql_type, "real");
+		break;
+	case SQL_FLOAT :
+		appendStringInfo(sql_type, "real");
+		break;
+	case SQL_DOUBLE :
+		appendStringInfo(sql_type, "float8");
+		break;
+	case SQL_BIT :
+		/* Use boolean instead of bit(1) because:
+		 * * binary types are not yet fully supported
+		 * * boolean is more commonly used in PG
+		 * * With options BoolsAsChar=0 this allows
+		 *   preserving boolean columns from pSQL ODBC.
+		 */
+		appendStringInfo(sql_type, "boolean");
+		break;
+	case SQL_SMALLINT :
+	case SQL_TINYINT :
+		appendStringInfo(sql_type, "smallint");
+		break;
+	case SQL_BIGINT :
+		appendStringInfo(sql_type, "bigint");
+		break;
+	/*
+	 * TODO: Implement these cases properly. See #23
+	 *
+	case SQL_BINARY :
+		appendStringInfo(sql_type, "bit(%u)", (unsigned)column_size);
+		break;
+	case SQL_VARBINARY :
+		appendStringInfo(sql_type, "varbit(%u)", (unsigned)column_size);
+		break;
+	*/
+	case SQL_LONGVARBINARY :
+		appendStringInfo(sql_type, "bytea");
+		break;
+	case SQL_TYPE_DATE :
+	case SQL_DATE :
+		appendStringInfo(sql_type, "date");
+		break;
+	case SQL_TYPE_TIME :
+	case SQL_TIME :
+		appendStringInfo(sql_type, "time");
+		break;
+	case SQL_TYPE_TIMESTAMP :
+	case SQL_TIMESTAMP :
+		appendStringInfo(sql_type, "timestamp");
+		break;
+	case SQL_GUID :
+		appendStringInfo(sql_type, "uuid");
+		break;
 	};
 }
 
@@ -606,32 +608,32 @@ minimum_buffer_size(SQLSMALLINT odbc_data_type)
 {
 	switch(odbc_data_type)
 	{
-		case SQL_DECIMAL :
-		case SQL_NUMERIC :
-			return 32;
-		case SQL_INTEGER :
-			return 12;
-		case SQL_REAL :
-		case SQL_FLOAT :
-			return 18;
-		case SQL_DOUBLE :
-			return 26;
-		case SQL_SMALLINT :
-		case SQL_TINYINT :
-			return 6;
-		case SQL_BIGINT :
-			return 21;
-		case SQL_TYPE_DATE :
-		case SQL_DATE :
-			return 10;
-		case SQL_TYPE_TIME :
-		case SQL_TIME :
-			return 8;
-		case SQL_TYPE_TIMESTAMP :
-		case SQL_TIMESTAMP :
-			return 20;
-		default :
-			return 0;
+	case SQL_DECIMAL :
+	case SQL_NUMERIC :
+		return 32;
+	case SQL_INTEGER :
+		return 12;
+	case SQL_REAL :
+	case SQL_FLOAT :
+		return 18;
+	case SQL_DOUBLE :
+		return 26;
+	case SQL_SMALLINT :
+	case SQL_TINYINT :
+		return 6;
+	case SQL_BIGINT :
+		return 21;
+	case SQL_TYPE_DATE :
+	case SQL_DATE :
+		return 10;
+	case SQL_TYPE_TIME :
+	case SQL_TIME :
+		return 8;
+	case SQL_TYPE_TIMESTAMP :
+	case SQL_TIMESTAMP :
+		return 20;
+	default :
+		return 0;
 	};
 }
 
@@ -645,11 +647,9 @@ odbcGetOptions(Oid server_oid, List *add_options, odbcFdwOptions *extracted_opti
 	UserMapping     *mapping;
 	List            *options;
 
-	#ifdef DEBUG
-		elog(DEBUG1, "odbcGetOptions");
-	#endif
+	elog_debug("%s", __func__);
 
-  server  = GetForeignServer(server_oid);
+	server  = GetForeignServer(server_oid);
 	mapping = GetUserMapping(GetUserId(), server_oid);
 
 	options = NIL;
@@ -668,45 +668,44 @@ odbcGetTableOptions(Oid foreigntableid, odbcFdwOptions *extracted_options)
 {
 	ForeignTable    *table;
 
-	#ifdef DEBUG
-		elog(DEBUG1, "odbcGetTableOptions");
-	#endif
+	elog_debug("%s", __func__);
 
 	table = GetForeignTable(foreigntableid);
-  odbcGetOptions(table->serverid, table->options, extracted_options);
+	odbcGetOptions(table->serverid, table->options, extracted_options);
 }
 
 static void
 check_return(SQLRETURN ret, char *msg, SQLHANDLE handle, SQLSMALLINT type)
 {
 	int err_code = ERRCODE_SYSTEM_ERROR;
-	#ifdef DEBUG
-		SQLINTEGER   i = 0;
-		SQLINTEGER   native;
-		SQLCHAR  state[ 7 ];
-		SQLCHAR  text[256];
-		SQLSMALLINT  len;
-		SQLRETURN    diag_ret;
-		if (SQL_SUCCEEDED(ret))
-			elog(DEBUG1, "Successful result: %s", msg);
-	#endif
+
+#ifdef DEBUG
+	SQLINTEGER   i = 0;
+	SQLINTEGER   native;
+	SQLCHAR  state[ 7 ];
+	SQLCHAR  text[256];
+	SQLSMALLINT  len;
+	SQLRETURN    diag_ret;
+	if (SQL_SUCCEEDED(ret))
+		elog(DEBUG1, "Successful result: %s", msg);
+#endif
 
 	if (!SQL_SUCCEEDED(ret))
 	{
-		#ifdef DEBUG
-			elog(DEBUG1, "Error result (%d): %s", ret, msg);
-			if (handle)
+#ifdef DEBUG
+		elog(DEBUG1, "Error result (%d): %s", ret, msg);
+		if (handle)
+		{
+			do
 			{
-				do
-				{
-					diag_ret = SQLGetDiagRec(type, handle, ++i, state, &native, text,
-					                    sizeof(text), &len );
-					if (SQL_SUCCEEDED(diag_ret))
-						elog(DEBUG1, " %s:%ld:%ld:%s\n", state, (long int) i, (long int) native, text);
-				}
-				while( diag_ret == SQL_SUCCESS );
+				diag_ret = SQLGetDiagRec(type, handle, ++i, state, &native, text,
+				                         sizeof(text), &len );
+				if (SQL_SUCCEEDED(diag_ret))
+					elog(DEBUG1, " %s:%ld:%ld:%s\n", state, (long int) i, (long int) native, text);
 			}
-		#endif
+			while( diag_ret == SQL_SUCCESS );
+		}
+#endif
 		ereport(ERROR, (errcode(err_code), errmsg("%s", msg)));
 	}
 }
@@ -719,9 +718,7 @@ getNameQualifierChar(SQLHDBC dbc, StringInfoData *nq_char)
 {
 	SQLCHAR name_qualifier_char[2];
 
-	#ifdef DEBUG
-		elog(DEBUG1, "getNameQualifierChar");
-	#endif
+	elog_debug("%s", __func__);
 
 	SQLGetInfo(dbc,
 	           SQL_CATALOG_NAME_SEPARATOR,
@@ -742,15 +739,13 @@ getQuoteChar(SQLHDBC dbc, StringInfoData *q_char)
 {
 	SQLCHAR quote_char[2];
 
-	#ifdef DEBUG
-		elog(DEBUG1, "getQuoteChar");
-	#endif
+	elog_debug("%s", __func__);
 
 	SQLGetInfo(dbc,
 	           SQL_IDENTIFIER_QUOTE_CHAR,
 	           (SQLPOINTER)&quote_char,
-	            2,
-	            NULL);
+	           2,
+	           NULL);
 	quote_char[1] = 0; // some drivers fail to copy the trailing zero
 
 	initStringInfo(q_char);
@@ -782,9 +777,7 @@ static void odbcConnStr(StringInfoData *conn_str, odbcFdwOptions* options)
 		DefElem *def = (DefElem *) lfirst(lc);
 		sep = appendConnAttribute(sep, conn_str, get_odbc_attribute_name(def->defname), defGetString(def));
 	}
-	#ifdef DEBUG
-		elog(DEBUG1,"CONN STR: %s", conn_str->data);
-	#endif
+	elog_debug("CONN STR: %s", conn_str->data);
 }
 
 /*
@@ -855,12 +848,10 @@ odbcGetTableSize(odbcFdwOptions* options, unsigned int *size)
 		appendStringInfo(&sql_str, "%s", options->sql_count);
 	}
 
-    #ifdef DEBUG
-		elog(DEBUG1, "Count query: %s", sql_str.data);
-	#endif
+	elog_debug("Count query: %s", sql_str.data);
 
 	ret = SQLExecDirect(stmt, (SQLCHAR *) sql_str.data, SQL_NTS);
-    check_return(ret, "Executing ODBC query", stmt, SQL_HANDLE_STMT);
+	check_return(ret, "Executing ODBC query", stmt, SQL_HANDLE_STMT);
 	if (SQL_SUCCEEDED(ret))
 	{
 		SQLFetch(stmt);
@@ -869,9 +860,7 @@ odbcGetTableSize(odbcFdwOptions* options, unsigned int *size)
 		if (SQL_SUCCEEDED(ret))
 		{
 			*size = (unsigned int) table_size;
-			#ifdef DEBUG
-				elog(DEBUG1, "Count query result: %lu", table_size);
-			#endif
+			elog_debug(DEBUG1, "Count query result: %lu", table_size);
 		}
 	}
 	else
@@ -901,109 +890,109 @@ odbcGetTableSize(odbcFdwOptions* options, unsigned int *size)
 
 static int strtoint(const char *nptr, char **endptr, int base)
 {
-  long val = strtol(nptr, endptr, base);
-  return (int) val;
+	long val = strtol(nptr, endptr, base);
+	return (int) val;
 }
 
 static Oid oid_from_server_name(char *serverName)
 {
-  char *serverOidString;
-  char sql[1024];
-  int serverOid;
-  HeapTuple tuple;
-  TupleDesc tupdesc;
-  int ret;
+	char *serverOidString;
+	char sql[1024];
+	int serverOid;
+	HeapTuple tuple;
+	TupleDesc tupdesc;
+	int ret;
 
-  if ((ret = SPI_connect()) < 0) {
-    elog(ERROR, "oid_from_server_name: SPI_connect returned %d", ret);
-  }
+	if ((ret = SPI_connect()) < 0) {
+		elog(ERROR, "oid_from_server_name: SPI_connect returned %d", ret);
+	}
 
-  sprintf(sql, "SELECT oid FROM pg_foreign_server where srvname = '%s'", serverName);
-  if ((ret = SPI_execute(sql, true, 1)) != SPI_OK_SELECT) {
-    elog(ERROR, "oid_from_server_name: Get server name from Oid query Failed, SP_exec returned %d.", ret);
-  }
+	sprintf(sql, "SELECT oid FROM pg_foreign_server where srvname = '%s'", serverName);
+	if ((ret = SPI_execute(sql, true, 1)) != SPI_OK_SELECT) {
+		elog(ERROR, "oid_from_server_name: Get server name from Oid query Failed, SP_exec returned %d.", ret);
+	}
 
-  if (SPI_tuptable->vals[0] != NULL)
-  {
-    tupdesc  = SPI_tuptable->tupdesc;
-    tuple    = SPI_tuptable->vals[0];
+	if (SPI_tuptable->vals[0] != NULL)
+	{
+		tupdesc  = SPI_tuptable->tupdesc;
+		tuple    = SPI_tuptable->vals[0];
 
-    serverOidString = SPI_getvalue(tuple, tupdesc, 1);
-    serverOid = strtoint(serverOidString, NULL, 10);
-  } else {
-    elog(ERROR, "Foreign server %s doesn't exist", serverName);
-  }
+		serverOidString = SPI_getvalue(tuple, tupdesc, 1);
+		serverOid = strtoint(serverOidString, NULL, 10);
+	} else {
+		elog(ERROR, "Foreign server %s doesn't exist", serverName);
+	}
 
-  SPI_finish();
-  return serverOid;
+	SPI_finish();
+	return serverOid;
 }
 
 Datum
 odbc_table_size(PG_FUNCTION_ARGS)
 {
-  char *serverName = text_to_cstring(PG_GETARG_TEXT_PP(0));
-  char *tableName = text_to_cstring(PG_GETARG_TEXT_PP(1));
-  char *defname = "table";
-  unsigned int tableSize;
-  List *tableOptions = NIL;
-  Node *val = (Node *) makeString(tableName);
+	char *serverName = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	char *tableName = text_to_cstring(PG_GETARG_TEXT_PP(1));
+	char *defname = "table";
+	unsigned int tableSize;
+	List *tableOptions = NIL;
+	Node *val = (Node *) makeString(tableName);
 #if PG_VERSION_NUM >= 100000
-  DefElem *elem = (DefElem *) makeDefElem(defname, val, -1);
+	DefElem *elem = (DefElem *) makeDefElem(defname, val, -1);
 #else
-  DefElem *elem = (DefElem *) makeDefElem(defname, val);
+	DefElem *elem = (DefElem *) makeDefElem(defname, val);
 #endif
 
-  tableOptions = lappend(tableOptions, elem);
-  Oid serverOid = oid_from_server_name(serverName);
-  odbcFdwOptions options;
-  odbcGetOptions(serverOid, tableOptions, &options);
-  odbcGetTableSize(&options, &tableSize);
+	tableOptions = lappend(tableOptions, elem);
+	Oid serverOid = oid_from_server_name(serverName);
+	odbcFdwOptions options;
+	odbcGetOptions(serverOid, tableOptions, &options);
+	odbcGetTableSize(&options, &tableSize);
 
-  PG_RETURN_INT32(tableSize);
+	PG_RETURN_INT32(tableSize);
 }
 
 Datum
 odbc_query_size(PG_FUNCTION_ARGS)
 {
-  char *serverName = text_to_cstring(PG_GETARG_TEXT_PP(0));
-  char *sqlQuery = text_to_cstring(PG_GETARG_TEXT_PP(1));
-  char *defname = "sql_query";
-  unsigned int querySize;
-  List *queryOptions = NIL;
-  Node *val = (Node *) makeString(sqlQuery);
+	char *serverName = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	char *sqlQuery = text_to_cstring(PG_GETARG_TEXT_PP(1));
+	char *defname = "sql_query";
+	unsigned int querySize;
+	List *queryOptions = NIL;
+	Node *val = (Node *) makeString(sqlQuery);
 #if PG_VERSION_NUM >= 100000
-  DefElem *elem = (DefElem *) makeDefElem(defname, val, -1);
+	DefElem *elem = (DefElem *) makeDefElem(defname, val, -1);
 #else
-  DefElem *elem = (DefElem *) makeDefElem(defname, val);
+	DefElem *elem = (DefElem *) makeDefElem(defname, val);
 #endif
 
-  queryOptions = lappend(queryOptions, elem);
-  Oid serverOid = oid_from_server_name(serverName);
-  odbcFdwOptions options;
-  odbcGetOptions(serverOid, queryOptions, &options);
-  odbcGetTableSize(&options, &querySize);
+	queryOptions = lappend(queryOptions, elem);
+	Oid serverOid = oid_from_server_name(serverName);
+	odbcFdwOptions options;
+	odbcGetOptions(serverOid, queryOptions, &options);
+	odbcGetTableSize(&options, &querySize);
 
-  PG_RETURN_INT32(querySize);
+	PG_RETURN_INT32(querySize);
 }
 
 /*
  * Get the list of tables for the current datasource
  */
 typedef struct {
-  SQLSMALLINT TargetType;
-  SQLPOINTER TargetValuePtr;
-  SQLINTEGER BufferLength;
-  SQLLEN StrLen_or_Ind;
+	SQLSMALLINT TargetType;
+	SQLPOINTER TargetValuePtr;
+	SQLINTEGER BufferLength;
+	SQLLEN StrLen_or_Ind;
 } DataBinding;
 
 typedef struct {
-  Oid serverOid;
-  DataBinding* tableResult;
-  SQLHSTMT stmt;
-  SQLCHAR schema;
-  SQLCHAR name;
-  SQLUINTEGER rowLimit;
-  SQLUINTEGER currentRow;
+	Oid serverOid;
+	DataBinding* tableResult;
+	SQLHSTMT stmt;
+	SQLCHAR schema;
+	SQLCHAR name;
+	SQLUINTEGER rowLimit;
+	SQLUINTEGER currentRow;
 } TableDataCtx;
 
 
@@ -1012,93 +1001,93 @@ Datum odbc_tables_list(PG_FUNCTION_ARGS)
 	SQLHENV env;
 	SQLHDBC dbc;
 	SQLHSTMT stmt;
-  SQLUSMALLINT i;
-  SQLUSMALLINT numColumns = 5;
-  SQLUSMALLINT bufferSize = 1024;
-  SQLUINTEGER rowLimit;
-  SQLUINTEGER currentRow;
-  SQLRETURN retCode;
+	SQLUSMALLINT i;
+	SQLUSMALLINT numColumns = 5;
+	SQLUSMALLINT bufferSize = 1024;
+	SQLUINTEGER rowLimit;
+	SQLUINTEGER currentRow;
+	SQLRETURN retCode;
 
-  FuncCallContext *funcctx;
-  TupleDesc tupdesc;
-  TableDataCtx *datafctx;
-  DataBinding* tableResult;
-  AttInMetadata *attinmeta;
+	FuncCallContext *funcctx;
+	TupleDesc tupdesc;
+	TableDataCtx *datafctx;
+	DataBinding* tableResult;
+	AttInMetadata *attinmeta;
 
-  if (SRF_IS_FIRSTCALL()) {
-    funcctx = SRF_FIRSTCALL_INIT();
-    MemoryContext oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
-    datafctx = (TableDataCtx *) palloc(sizeof(TableDataCtx));
-    tableResult = (DataBinding*) palloc( numColumns * sizeof(DataBinding) );
+	if (SRF_IS_FIRSTCALL()) {
+		funcctx = SRF_FIRSTCALL_INIT();
+		MemoryContext oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
+		datafctx = (TableDataCtx *) palloc(sizeof(TableDataCtx));
+		tableResult = (DataBinding*) palloc( numColumns * sizeof(DataBinding) );
 
-    char *serverName = text_to_cstring(PG_GETARG_TEXT_PP(0));
-    int serverOid = oid_from_server_name(serverName);
+		char *serverName = text_to_cstring(PG_GETARG_TEXT_PP(0));
+		int serverOid = oid_from_server_name(serverName);
 
-    rowLimit = PG_GETARG_INT32(1); 
-    currentRow = 0;
+		rowLimit = PG_GETARG_INT32(1);
+		currentRow = 0;
 
-    odbcFdwOptions options;
-    odbcGetOptions(serverOid, NULL, &options);
-    odbc_connection(&options, &env, &dbc);
-    SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
+		odbcFdwOptions options;
+		odbcGetOptions(serverOid, NULL, &options);
+		odbc_connection(&options, &env, &dbc);
+		SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
 
-    for ( i = 0 ; i < numColumns ; i++ ) {
-      tableResult[i].TargetType = SQL_C_CHAR;
-      tableResult[i].BufferLength = (bufferSize + 1);
-      tableResult[i].TargetValuePtr = palloc( sizeof(char)*tableResult[i].BufferLength );
-    }
+		for ( i = 0 ; i < numColumns ; i++ ) {
+			tableResult[i].TargetType = SQL_C_CHAR;
+			tableResult[i].BufferLength = (bufferSize + 1);
+			tableResult[i].TargetValuePtr = palloc( sizeof(char)*tableResult[i].BufferLength );
+		}
 
-    for ( i = 0 ; i < numColumns ; i++ ) {
-      retCode = SQLBindCol(stmt, i + 1, tableResult[i].TargetType, tableResult[i].TargetValuePtr, tableResult[i].BufferLength, &(tableResult[i].StrLen_or_Ind));
-    }
+		for ( i = 0 ; i < numColumns ; i++ ) {
+			retCode = SQLBindCol(stmt, i + 1, tableResult[i].TargetType, tableResult[i].TargetValuePtr, tableResult[i].BufferLength, &(tableResult[i].StrLen_or_Ind));
+		}
 
-    if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
-      ereport(ERROR,
-          (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-           errmsg("function returning record called in context "
-             "that cannot accept type record")));
+		if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
+			ereport(ERROR,
+			        (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+			         errmsg("function returning record called in context "
+			                "that cannot accept type record")));
 
-    attinmeta = TupleDescGetAttInMetadata(tupdesc);
+		attinmeta = TupleDescGetAttInMetadata(tupdesc);
 
-    datafctx->serverOid = serverOid;
-    datafctx->tableResult = tableResult;
-    datafctx->stmt = stmt;
-    datafctx->rowLimit = rowLimit;
-    datafctx->currentRow = currentRow;
-    funcctx->user_fctx = datafctx;
-    funcctx->attinmeta = attinmeta;
+		datafctx->serverOid = serverOid;
+		datafctx->tableResult = tableResult;
+		datafctx->stmt = stmt;
+		datafctx->rowLimit = rowLimit;
+		datafctx->currentRow = currentRow;
+		funcctx->user_fctx = datafctx;
+		funcctx->attinmeta = attinmeta;
 
-    MemoryContextSwitchTo(oldcontext);
-  }
+		MemoryContextSwitchTo(oldcontext);
+	}
 
-  funcctx = SRF_PERCALL_SETUP();
+	funcctx = SRF_PERCALL_SETUP();
 
-  datafctx = funcctx->user_fctx; 
-  stmt = datafctx->stmt;
-  tableResult = datafctx->tableResult;
-  rowLimit = datafctx->rowLimit;
-  currentRow = datafctx->currentRow;
-  attinmeta = funcctx->attinmeta;
+	datafctx = funcctx->user_fctx;
+	stmt = datafctx->stmt;
+	tableResult = datafctx->tableResult;
+	rowLimit = datafctx->rowLimit;
+	currentRow = datafctx->currentRow;
+	attinmeta = funcctx->attinmeta;
 
-  retCode = SQLTables( stmt, NULL, SQL_NTS, NULL, SQL_NTS, NULL, SQL_NTS, (SQLCHAR*)"TABLE", SQL_NTS );
-  if (SQL_SUCCEEDED(retCode = SQLFetch(stmt)) && (rowLimit == 0 || currentRow < rowLimit)) {
-    char       **values;
-    HeapTuple    tuple;
-    Datum        result;
+	retCode = SQLTables( stmt, NULL, SQL_NTS, NULL, SQL_NTS, NULL, SQL_NTS, (SQLCHAR*)"TABLE", SQL_NTS );
+	if (SQL_SUCCEEDED(retCode = SQLFetch(stmt)) && (rowLimit == 0 || currentRow < rowLimit)) {
+		char       **values;
+		HeapTuple    tuple;
+		Datum        result;
 
-    values = (char **) palloc(2 * sizeof(char *));
-    values[0] = (char *) palloc(256 * sizeof(char));
-    values[1] = (char *) palloc(256 * sizeof(char));
-    snprintf(values[0], 256, "%s", (char *)tableResult[SQLTABLES_SCHEMA_COLUMN-1].TargetValuePtr);
-    snprintf(values[1], 256, "%s", (char *)tableResult[SQLTABLES_NAME_COLUMN-1].TargetValuePtr);
-    tuple = BuildTupleFromCStrings(attinmeta, values);
-    result = HeapTupleGetDatum(tuple);
-    currentRow++;
-    datafctx->currentRow = currentRow;
-    SRF_RETURN_NEXT(funcctx, result);
-  } else {
-    SRF_RETURN_DONE(funcctx);
-  }
+		values = (char **) palloc(2 * sizeof(char *));
+		values[0] = (char *) palloc(256 * sizeof(char));
+		values[1] = (char *) palloc(256 * sizeof(char));
+		snprintf(values[0], 256, "%s", (char *)tableResult[SQLTABLES_SCHEMA_COLUMN-1].TargetValuePtr);
+		snprintf(values[1], 256, "%s", (char *)tableResult[SQLTABLES_NAME_COLUMN-1].TargetValuePtr);
+		tuple = BuildTupleFromCStrings(attinmeta, values);
+		result = HeapTupleGetDatum(tuple);
+		currentRow++;
+		datafctx->currentRow = currentRow;
+		SRF_RETURN_NEXT(funcctx, result);
+	} else {
+		SRF_RETURN_DONE(funcctx);
+	}
 }
 
 /*
@@ -1112,11 +1101,9 @@ odbcGetQual(Node *node, TupleDesc tupdesc, List *col_mapping_list, char **key, c
 	*value = NULL;
 	*pushdown = false;
 
-	#ifdef DEBUG
-		elog(DEBUG1, "odbcGetQual");
-	#endif
+	elog_debug("%s", __func__);
 
-    if (!node)
+	if (!node)
 		return;
 
 	if (IsA(node, OpExpr))
@@ -1144,7 +1131,7 @@ odbcGetQual(Node *node, TupleDesc tupdesc, List *col_mapping_list, char **key, c
 			/* And get the column and value... */
 			*key = NameStr(tupdesc->attrs[varattno - 1]->attname);
 
-            if (((Const *) right)->consttype == PROCID_TEXTCONST)
+			if (((Const *) right)->consttype == PROCID_TEXTCONST)
 				*value = TextDatumGetCString(((Const *) right)->constvalue);
 			else
 			{
@@ -1171,7 +1158,7 @@ odbcGetQual(Node *node, TupleDesc tupdesc, List *col_mapping_list, char **key, c
 			if (op->opfuncid == PROCID_TEXTEQ)
 				*pushdown = true;
 
-            return;
+			return;
 		}
 	}
 	return;
@@ -1186,9 +1173,7 @@ odbcIsValidOption(const char *option, Oid context)
 {
 	struct odbcFdwOption *opt;
 
-	#ifdef DEBUG
-		elog(DEBUG1, "odbcIsValidOption");
-	#endif
+	elog_debug("%s", __func__);
 
 	/* Check if the options presents in the valid option list */
 	for (opt = valid_options; opt->optname; opt++)
@@ -1215,9 +1200,7 @@ static void odbcGetForeignRelSize(PlannerInfo *root, RelOptInfo *baserel, Oid fo
 	unsigned int table_size   = 0;
 	odbcFdwOptions options;
 
-	#ifdef DEBUG
-		elog(DEBUG1, "odbcGetForeignRelSize");
-	#endif
+	elog_debug("%s", __func__);
 
 	/* Fetch the foreign table options */
 	odbcGetTableOptions(foreigntableid, &options);
@@ -1233,9 +1216,7 @@ static void odbcEstimateCosts(PlannerInfo *root, RelOptInfo *baserel, Cost *star
 	unsigned int table_size   = 0;
 	odbcFdwOptions options;
 
-	#ifdef DEBUG
-		elog(DEBUG1, "----> finishing odbcEstimateCosts");
-	#endif
+	elog_debug("----> starting %s", __func__);
 
 	/* Fetch the foreign table options */
 	odbcGetTableOptions(foreigntableid, &options);
@@ -1246,11 +1227,7 @@ static void odbcEstimateCosts(PlannerInfo *root, RelOptInfo *baserel, Cost *star
 
 	*total_cost = baserel->rows + *startup_cost;
 
-	#ifdef DEBUG
-		ereport(DEBUG1,
-		        (errmsg("----> finishing odbcEstimateCosts")
-		       ));
-	#endif
+	elog_debug("----> finishing %s", __func__);
 
 }
 
@@ -1259,68 +1236,43 @@ static void odbcGetForeignPaths(PlannerInfo *root, RelOptInfo *baserel, Oid fore
 	Cost startup_cost;
 	Cost total_cost;
 
-	#ifdef DEBUG
-		ereport(DEBUG,
-		        (errmsg("----> starting odbcGetForeignPaths")
-		       ));
-	#endif
+	elog_debug("----> starting %s", __func__);
 
 	odbcEstimateCosts(root, baserel, &startup_cost, &total_cost, foreigntableid);
 
 	add_path(baserel,
-	         (Path *) create_foreignscan_path(root, baserel, 
+	         (Path *) create_foreignscan_path(root, baserel,
 #if PG_VERSION_NUM >= 90600
-             NULL, /* PathTarget */
+	                 NULL, /* PathTarget */
 #endif
-			 baserel->rows, 
-			 startup_cost, 
-			 total_cost,
-	         NIL, /* no pathkeys */
-			 NULL, /* no outer rel either */
-			 NULL, /* no extra plan */
-			 NIL /* no fdw_private list */));
+	                 baserel->rows,
+	                 startup_cost,
+	                 total_cost,
+	                 NIL, /* no pathkeys */
+	                 NULL, /* no outer rel either */
+	                 NULL, /* no extra plan */
+	                 NIL /* no fdw_private list */));
 
-	#ifdef DEBUG
-		ereport(DEBUG1,
-		        (errmsg("----> finishing odbcGetForeignPaths")
-		       ));
-	#endif
+	elog_debug("----> finishing %s", __func__);
 }
 
 static bool odbcAnalyzeForeignTable(Relation relation, AcquireSampleRowsFunc *func, BlockNumber *totalpages)
 {
-	#ifdef DEBUG
-		ereport(DEBUG,
-		        (errmsg("----> starting odbcAnalyzeForeignTable")
-		       ));
-	#endif
-
-	#ifdef DEBUG
-		ereport(DEBUG1,
-		        (errmsg("----> finishing odbcAnalyzeForeignTable")
-		       ));
-	#endif
+	elog_debug("----> starting %s", __func__);
+	elog_debug("----> finishing %s", __func__);
 
 	return false;
 }
 
 static ForeignScan* odbcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel,
-	Oid foreigntableid, ForeignPath *best_path, List *tlist, List *scan_clauses, Plan *outer_plan)
+                                       Oid foreigntableid, ForeignPath *best_path, List *tlist, List *scan_clauses, Plan *outer_plan)
 {
 	Index scan_relid = baserel->relid;
-	#ifdef DEBUG
-		ereport(DEBUG,
-		        (errmsg("----> starting odbcGetForeignPlan")
-		       ));
-	#endif
+	elog_debug("----> starting %s", __func__);
 
 	scan_clauses = extract_actual_clauses(scan_clauses, false);
 
-	#ifdef DEBUG
-		ereport(DEBUG1,
-		        (errmsg("----> finishing odbcGetForeignPlan")
-		       ));
-	#endif
+	elog_debug("----> finishing %s", __func__);
 
 	return make_foreignscan(tlist, scan_clauses,
 	                        scan_relid, NIL, NIL,
@@ -1369,16 +1321,14 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 	const char* schema_name;
 	int encoding = -1;
 
-	#ifdef DEBUG
-		elog(DEBUG1, "odbcBeginForeignScan");
-	#endif
+	elog_debug("%s", __func__);
 
 	/* Fetch the foreign table options */
 	odbcGetTableOptions(RelationGetRelid(node->ss.ss_currentRelation), &options);
 
 	schema_name = get_schema_name(&options);
 
-    odbc_connection(&options, &env, &dbc);
+	odbc_connection(&options, &env, &dbc);
 
 	/* Get quote char */
 	getQuoteChar(dbc, &quote_char);
@@ -1440,7 +1390,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 	if (node->ss.ps.plan->qual)
 	{
 #if PG_VERSION_NUM >= 100000
-        ExprState  *state = node->ss.ps.qual;
+		ExprState  *state = node->ss.ps.qual;
 		odbcGetQual((Node *) state->expr, node->ss.ss_currentRelation->rd_att, options.mapping_list, &qual_key, &qual_value, &pushdown);
 #else
 		ListCell    *lc;
@@ -1468,14 +1418,14 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 		if (is_blank_string(schema_name))
 		{
 			appendStringInfo(&sql, "SELECT %s FROM %s%s%s", col_str.data,
-							 (char *) quote_char.data, options.table, (char *) quote_char.data);
+			                 (char *) quote_char.data, options.table, (char *) quote_char.data);
 		}
 		else
 		{
 			appendStringInfo(&sql, "SELECT %s FROM %s%s%s%s%s%s%s", col_str.data,
-							 (char *) quote_char.data, schema_name, (char *) quote_char.data,
-							 (char *) name_qualifier_char.data,
-							 (char *) quote_char.data, options.table, (char *) quote_char.data);
+			                 (char *) quote_char.data, schema_name, (char *) quote_char.data,
+			                 (char *) name_qualifier_char.data,
+			                 (char *) quote_char.data, options.table, (char *) quote_char.data);
 		}
 		if (pushdown)
 		{
@@ -1487,13 +1437,11 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 	/* Allocate a statement handle */
 	SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
 
-    #ifdef DEBUG
-		elog(DEBUG1, "Executing query: %s", sql.data);
-	#endif
+	elog_debug("Executing query: %s", sql.data);
 
 	/* Retrieve a list of rows */
 	ret = SQLExecDirect(stmt, (SQLCHAR *) sql.data, SQL_NTS);
-    check_return(ret, "Executing ODBC query", stmt, SQL_HANDLE_STMT);
+	check_return(ret, "Executing ODBC query", stmt, SQL_HANDLE_STMT);
 	SQLNumResultCols(stmt, &result_columns);
 
 	festate = (odbcFdwExecutionState *) palloc(sizeof(odbcFdwExecutionState));
@@ -1534,9 +1482,7 @@ odbcIterateForeignScan(ForeignScanState *node)
 	List *col_size_array = NIL;
 	List *col_conversion_array = NIL;
 
-	#ifdef DEBUG
-		elog(DEBUG1, "odbcIterateForeignScan");
-	#endif
+	elog_debug("%s", __func__);
 
 	ret = SQLFetch(stmt);
 
@@ -1558,7 +1504,7 @@ odbcIterateForeignScan(ForeignScanState *node)
 		int k;
 		bool found;
 
-        StringInfoData sql_type;
+		StringInfoData sql_type;
 
 		/* Allocate memory for the masks in a memory context that
 		   persists between IterateForeignScan calls */
@@ -1681,7 +1627,7 @@ odbcIterateForeignScan(ForeignScanState *node)
 			buf[0] = 0;
 			buf_used = 0;
 			ret = SQLGetData(stmt, i, SQL_C_CHAR,
-							 buf, sizeof(char) * (col_size+1), &indicator);
+			                 buf, sizeof(char) * (col_size+1), &indicator);
 			buf_used = indicator;
 
 			if (ret == SQL_SUCCESS_WITH_INFO)
@@ -1738,7 +1684,7 @@ odbcIterateForeignScan(ForeignScanState *node)
 							accum_buffer[accum_used] = 0;
 							// Get new part
 							if (ret != SQL_SUCCESS_WITH_INFO)
-							  break;
+								break;
 							ret = SQLGetData(stmt, i, SQL_C_CHAR, buf, sizeof(char) * (col_size+1), &indicator);
 						};
 
@@ -1764,8 +1710,8 @@ odbcIterateForeignScan(ForeignScanState *node)
 				/* Handle null columns */
 				if (indicator == SQL_NULL_DATA)
 				{
-				  // BuildTupleFromCStrings expects NULLs to be NULL pointers
-				  values[mapped_pos] = NULL;
+					// BuildTupleFromCStrings expects NULLs to be NULL pointers
+					values[mapped_pos] = NULL;
 				}
 				else
 				{
@@ -1774,29 +1720,29 @@ odbcIterateForeignScan(ForeignScanState *node)
 						/* Convert character encoding */
 						buf = pg_any_to_server(buf, strlen(buf), festate->encoding);
 					}
-				 	initStringInfo(&col_data);
+					initStringInfo(&col_data);
 					switch (conversion)
 					{
-						case TEXT_CONVERSION :
-							appendStringInfoString (&col_data, buf);
-							break;
-						case HEX_CONVERSION :
-							appendStringInfoString (&col_data, "\\x");
-							appendStringInfoString (&col_data, buf);
-							break;
-						case BOOL_CONVERSION :
-							if (buf[0] == 0)
-								strcpy(buf, "F");
-							else if (buf[0] == 1)
-								strcpy(buf, "T");
-							appendStringInfoString (&col_data, buf);
-							break;
-						case BIN_CONVERSION :
-							ereport(ERROR,
-							        (errcode(ERRCODE_FDW_INVALID_DATA_TYPE),
-							         errmsg("Bit string columns are not supported")
-							        ));
-							break;
+					case TEXT_CONVERSION :
+						appendStringInfoString (&col_data, buf);
+						break;
+					case HEX_CONVERSION :
+						appendStringInfoString (&col_data, "\\x");
+						appendStringInfoString (&col_data, buf);
+						break;
+					case BOOL_CONVERSION :
+						if (buf[0] == 0)
+							strcpy(buf, "F");
+						else if (buf[0] == 1)
+							strcpy(buf, "T");
+						appendStringInfoString (&col_data, buf);
+						break;
+					case BIN_CONVERSION :
+						ereport(ERROR,
+						        (errcode(ERRCODE_FDW_INVALID_DATA_TYPE),
+						         errmsg("Bit string columns are not supported")
+						        ));
+						break;
 					}
 
 					values[mapped_pos] = col_data.data;
@@ -1823,9 +1769,7 @@ odbcExplainForeignScan(ForeignScanState *node, ExplainState *es)
 	odbcFdwExecutionState *festate;
 	unsigned int table_size = 0;
 
-	#ifdef DEBUG
-		elog(DEBUG1, "odbcExplainForeignScan");
-	#endif
+	elog_debug("%s", __func__);
 
 	festate = (odbcFdwExecutionState *) node->fdw_state;
 
@@ -1847,9 +1791,7 @@ odbcEndForeignScan(ForeignScanState *node)
 {
 	odbcFdwExecutionState *festate;
 
-	#ifdef DEBUG
-		elog(DEBUG1, "odbcEndForeignScan");
-	#endif
+	elog_debug("%s", __func__);
 
 	/* if festate is NULL, we are in EXPLAIN; nothing to do */
 	festate = (odbcFdwExecutionState *) node->fdw_state;
@@ -1870,9 +1812,7 @@ odbcEndForeignScan(ForeignScanState *node)
 static void
 odbcReScanForeignScan(ForeignScanState *node)
 {
-	#ifdef DEBUG
-		elog(DEBUG1, "odbcReScanForeignScan");
-	#endif
+	elog_debug("%s", __func__);
 }
 
 
@@ -1884,14 +1824,14 @@ appendQuotedString(StringInfo buffer, const char* text)
 
 	appendStringInfoChar(buffer, SINGLE_QUOTE);
 
-    while (*text)
+	while (*text)
 	{
 		p = text;
 		while (*p && *p != SINGLE_QUOTE)
 		{
 			p++;
 		}
-	    appendBinaryStringInfo(buffer, text, p - text);
+		appendBinaryStringInfo(buffer, text, p - text);
 		if (*p == SINGLE_QUOTE)
 		{
 			appendStringInfoChar(buffer, SINGLE_QUOTE);
@@ -1949,9 +1889,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 	const char* schema_name;
 	bool missing_foreign_schema = false;
 
-	#ifdef DEBUG
-		elog(DEBUG1, "odbcImportForeignSchema");
-	#endif
+	elog_debug("%s", __func__);
 
 	odbcGetOptions(serverOid, stmt->options, &options);
 
@@ -2004,10 +1942,10 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 
 			sql_data_type(DataType, ColumnSize, DecimalDigits, Nullable, &sql_type);
 			if (is_blank_string(sql_type.data))
-				{
-					elog(NOTICE, "Data type not supported (%d) for column %s", DataType, ColumnName);
-					continue;
-				}
+			{
+				elog(NOTICE, "Data type not supported (%d) for column %s", DataType, ColumnName);
+				continue;
+			}
 			if (i > 1)
 			{
 				appendStringInfo(&col_str, ", ");
@@ -2039,12 +1977,12 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 			SQLAllocHandle(SQL_HANDLE_STMT, dbc, &tables_stmt);
 
 			ret = SQLTables(
-				 tables_stmt,
-				 NULL, 0, /* Catalog: (SQLCHAR*)SQL_ALL_CATALOGS, SQL_NTS would include also tables from internal catalogs */
-				 NULL, 0, /* Schema: we avoid filtering by schema here to avoid problems with some drivers */
-				 NULL, 0, /* Table */
-				 (SQLCHAR*)"TABLE", SQL_NTS /* Type of table (we're not interested in views, temporary tables, etc.) */
-			);
+			          tables_stmt,
+			          NULL, 0, /* Catalog: (SQLCHAR*)SQL_ALL_CATALOGS, SQL_NTS would include also tables from internal catalogs */
+			          NULL, 0, /* Schema: we avoid filtering by schema here to avoid problems with some drivers */
+			          NULL, 0, /* Table */
+			          (SQLCHAR*)"TABLE", SQL_NTS /* Type of table (we're not interested in views, temporary tables, etc.) */
+			      );
 			check_return(ret, "Obtaining ODBC tables", tables_stmt, SQL_HANDLE_STMT);
 
 			initStringInfo(&col_str);
@@ -2126,7 +2064,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 		{
 			elog(ERROR,"Unknown list type in IMPORT FOREIGN SCHEMA");
 		}
-        foreach(tables_cell, tables)
+		foreach(tables_cell, tables)
 		{
 			char *table_name = (char*)lfirst(tables_cell);
 
@@ -2136,15 +2074,15 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 			SQLAllocHandle(SQL_HANDLE_STMT, dbc, &columns_stmt);
 
 			ret = SQLColumns(
-				 columns_stmt,
-				 NULL, 0,
-				 (SQLCHAR*)schema_name, SQL_NTS,
-				 (SQLCHAR*)table_name,  SQL_NTS,
-				 NULL, 0
-			);
+			          columns_stmt,
+			          NULL, 0,
+			          (SQLCHAR*)schema_name, SQL_NTS,
+			          (SQLCHAR*)table_name,  SQL_NTS,
+			          NULL, 0
+			      );
 			check_return(ret, "Obtaining ODBC columns", columns_stmt, SQL_HANDLE_STMT);
 
-            i = 0;
+			i = 0;
 			initStringInfo(&col_str);
 			ColumnName = (SQLCHAR *) palloc(sizeof(SQLCHAR) * MAXIMUM_COLUMN_NAME_LEN);
 			while (SQL_SUCCESS == ret)
@@ -2164,10 +2102,10 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 					// check_return(ret, "Reading column nullable", columns_stmt, SQL_HANDLE_STMT);
 					sql_data_type(DataType, ColumnSize, DecimalDigits, Nullable, &sql_type);
 					if (is_blank_string(sql_type.data))
-						{
-							elog(NOTICE, "Data type not supported (%d) for column %s", DataType, ColumnName);
-							continue;
-						}
+					{
+						elog(NOTICE, "Data type not supported (%d) for column %s", DataType, ColumnName);
+						continue;
+					}
 					if (++i > 1)
 					{
 						appendStringInfo(&col_str, ", ");
@@ -2188,7 +2126,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 		// temporarily define vars here...
 		char *table_name = (char*)lfirst(tables_cell);
 		char *columns    = (char*)lfirst(table_columns_cell);
-        StringInfoData create_statement;
+		StringInfoData create_statement;
 		ListCell *option;
 		int option_count = 0;
 		const char *prefix = empty_string_if_null(options.prefix);
@@ -2218,5 +2156,5 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 		create_statements = lappend(create_statements, (void*)create_statement.data);
 	}
 
-   return create_statements;
+	return create_statements;
 }

@@ -24,10 +24,7 @@ apt-get -y autoremove
 # Install PostgreSQL 
 apt-get -y install postgresql-${PGSQL_VERSION} postgresql-server-dev-${PGSQL_VERSION}
 
-# read dir contents
-find /etc/postgresql/
-
-# configure it to accept local connections from postgres
+# Configure it to accept local connections from postgres
 echo -e "# TYPE  DATABASE        USER            ADDRESS                 METHOD \nlocal   all             postgres                                trust\nlocal   all             all                                     trust\nhost    all             all             127.0.0.1/32            trust" > /etc/postgresql/${PGSQL_VERSION}/main/pg_hba.conf
 
 # Restart PostgreSQL 

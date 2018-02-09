@@ -2,6 +2,12 @@
 
 set -ex
 
+# Add the PDGD repository
+apt-key adv --keyserver keys.gnupg.net --recv-keys 7FCC7D46ACCC4CF8
+add-apt-repository "deb http://apt.postgresql.org/pub/repos/apt/ trusty-pgdg main"
+#wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+apt-get update
+   
 # Remove those all PgSQL versions except the one we're testing
 PGSQL_VERSIONS=(9.2 9.3 9.4 9.5 9.6 10 11)
 /etc/init.d/postgresql stop # stop travis default instance

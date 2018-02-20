@@ -16,6 +16,7 @@ Announcements:
 - Added an `.editorconfig` file to help enforce formatting of c/h/sql/yml files 222b39a
 - Applied bulk formatting pass to get everything lined up d53480e
 - Added this NEWS.md file
+- Added a release procedure in HOWTO_RELEASE.md file
 
 
 ## 0.2.0

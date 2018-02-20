@@ -1,7 +1,7 @@
 # Changelog
 
 ## 0.3.0
-Released yyyy-mm-dd
+Released 2018-02-20
 
 Bug fixes:
 - Fixed issues with travis builds

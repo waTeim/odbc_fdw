@@ -86,6 +86,7 @@ PG_MODULE_MAGIC;
  * 4: TABLE_TYPE
  * 5: REMARKS
  */
+#define SQLTABLES_CATALOG_COLUMN 1
 #define SQLTABLES_SCHEMA_COLUMN 2
 #define SQLTABLES_NAME_COLUMN 3
 
@@ -525,7 +526,7 @@ sql_data_type(
 		break;
 	case SQL_VARCHAR :
 	case SQL_WVARCHAR :
-		if (column_size <= 255)
+		if (column_size <= 255 && column_size > 0)
 		{
 			appendStringInfo(sql_type, "varchar(%u)", (unsigned)column_size);
 		}
@@ -573,15 +574,18 @@ sql_data_type(
 		appendStringInfo(sql_type, "bigint");
 		break;
 	/*
-	 * TODO: Implement these cases properly. See #23
-	 *
-	case SQL_BINARY :
-		appendStringInfo(sql_type, "bit(%u)", (unsigned)column_size);
-		break;
-	case SQL_VARBINARY :
-		appendStringInfo(sql_type, "varbit(%u)", (unsigned)column_size);
-		break;
+	* TODO: Implement these cases properly. See #23
+	*
+	* case SQL_BINARY:
+	*	appendStringInfo(sql_type, "bit(%u)", (unsigned)column_size);
+	*	break;
 	*/
+	case SQL_VARBINARY:
+		if (column_size > 0)
+			appendStringInfo(sql_type, "varbit(%u)", (unsigned)column_size);
+		else
+			appendStringInfo(sql_type,"bytea");
+			break;
 	case SQL_LONGVARBINARY :
 		appendStringInfo(sql_type, "bytea");
 		break;
@@ -653,9 +657,9 @@ odbcGetOptions(Oid server_oid, List *add_options, odbcFdwOptions *extracted_opti
 	mapping = GetUserMapping(GetUserId(), server_oid);
 
 	options = NIL;
-	options = list_concat(options, add_options);
-	options = list_concat(options, server->options);
-	options = list_concat(options, mapping->options);
+	options = list_concat(options, list_copy(add_options));
+	options = list_concat(options, list_copy(server->options));
+	options = list_concat(options, list_copy(mapping->options));
 
 	extract_odbcFdwOptions(options, extracted_options);
 }
@@ -2000,9 +2004,6 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 				if (SQL_SUCCESS == ret)
 				{
 					int excluded = false;
-					TableName = (SQLCHAR *) palloc(sizeof(SQLCHAR) * MAXIMUM_TABLE_NAME_LEN);
-					ret = SQLGetData(tables_stmt, SQLTABLES_NAME_COLUMN, SQL_C_CHAR, TableName, MAXIMUM_TABLE_NAME_LEN, &indicator);
-					check_return(ret, "Reading table name", tables_stmt, SQL_HANDLE_STMT);
 
 					/* Since we're not filtering the SQLTables call by schema
 					   we must exclude here tables that belong to other schemas.
@@ -2035,6 +2036,10 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 					     SQLCHAR *table_catalog = (SQLCHAR *) palloc(sizeof(SQLCHAR) * MAXIMUM_CATALOG_NAME_LEN);
 					     SQLGetData(tables_stmt, 1, SQL_C_CHAR, table_catalog, MAXIMUM_CATALOG_NAME_LEN, &indicator);
 					 */
+
+					TableName = (SQLCHAR *) palloc(sizeof(SQLCHAR) * MAXIMUM_TABLE_NAME_LEN);
+					ret = SQLGetData(tables_stmt, SQLTABLES_NAME_COLUMN, SQL_C_CHAR, TableName, MAXIMUM_TABLE_NAME_LEN, &indicator);
+					check_return(ret, "Reading table name", tables_stmt, SQL_HANDLE_STMT);
 
 					/* And now we'll handle tables excluded by an EXCEPT clause */
 					if (!excluded && stmt->list_type == FDW_IMPORT_SCHEMA_EXCEPT)

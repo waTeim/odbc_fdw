@@ -558,12 +558,13 @@ sql_data_type(
 		appendStringInfo(sql_type, "float8");
 		break;
 	case SQL_BIT :
-		/* Use boolean instead of bit(1) because:
-		 * * binary types are not yet fully supported
-		 * * boolean is more commonly used in PG
-		 * * With options BoolsAsChar=0 this allows
-		 *   preserving boolean columns from pSQL ODBC.
-		 */
+		/*
+		* Use boolean instead of bit(1) because:
+		* - binary types are not yet fully supported
+		* - boolean is more commonly used in PG
+		* - With options BoolsAsChar=0 this allows
+		*   preserving boolean columns from pSQL ODBC.
+		*/
 		appendStringInfo(sql_type, "boolean");
 		break;
 	case SQL_SMALLINT :
@@ -729,7 +730,7 @@ getNameQualifierChar(SQLHDBC dbc, StringInfoData *nq_char)
 	           (SQLPOINTER)&name_qualifier_char,
 	           2,
 	           NULL);
-	name_qualifier_char[1] = 0; // some drivers fail to copy the trailing zero
+	name_qualifier_char[1] = 0; /* some drivers fail to copy the trailing zero */
 
 	initStringInfo(nq_char);
 	appendStringInfo(nq_char, "%s", (char *) name_qualifier_char);
@@ -750,7 +751,7 @@ getQuoteChar(SQLHDBC dbc, StringInfoData *q_char)
 	           (SQLPOINTER)&quote_char,
 	           2,
 	           NULL);
-	quote_char[1] = 0; // some drivers fail to copy the trailing zero
+	quote_char[1] = 0; /* some drivers fail to copy the trailing zero */
 
 	initStringInfo(q_char);
 	appendStringInfo(q_char, "%s", (char *) quote_char);
@@ -1284,7 +1285,8 @@ static ForeignScan* odbcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel,
 
 	return make_foreignscan(tlist, scan_clauses,
 	                        scan_relid, NIL, NIL,
-	                        NIL /* fdw_scan_tlist */, NIL, /* fdw_recheck_quals */
+	                        NIL /* fdw_scan_tlist */,
+	                        NIL, /* fdw_recheck_quals */
 	                        NULL /* outer_plan */ );
 }
 
@@ -1622,19 +1624,21 @@ odbcIterateForeignScan(ForeignScanState *node)
 
 			buf = (char *) palloc(sizeof(char) * (col_size+1));
 
-			/* retrieve column data as a zero-terminated string */
-			/* TODO:
-			   binary fields (SQL_C_BIT, SQL_C_BINARY) do not have
-			   a trailing zero; they should be copied as now but without
-			   adding 1 to col_size, or using SQL_C_BIT or SQL_C_BINARY
-			   and then encoded into a binary PG literal (e.g. X'...'
-			   or B'...')
-			   For floating point types we should use SQL_C_FLOAT/SQL_C_DOUBLE
-			   to avoid precision loss.
-			   For date/time/timestamp these structures can be used:
-			   SQL_C_TYPE_DATE/SQL_C_TYPE_TIME/SQL_C_TYPE_TIMESTAMP.
-			   And finally, SQL_C_NUMERIC and SQL_C_GUID could also be used.
+			/*
+			* TODO:
+			* - binary fields (SQL_C_BIT, SQL_C_BINARY) do not have
+			*   a trailing zero; they should be copied as now but without
+			*   adding 1 to col_size, or using SQL_C_BIT or SQL_C_BINARY
+			*   and then encoded into a binary PG literal (e.g. X'...'
+			*   or B'...')
+			* - For floating point types we should use SQL_C_FLOAT/SQL_C_DOUBLE
+			*   to avoid precision loss.
+			* - For date/time/timestamp these structures can be used:
+			*   SQL_C_TYPE_DATE/SQL_C_TYPE_TIME/SQL_C_TYPE_TIMESTAMP.
+			*   And finally, SQL_C_NUMERIC and SQL_C_GUID could also be used.
 			*/
+
+			/* retrieve column data as a zero-terminated string */
 			buf[0] = 0;
 			ret = SQLGetData(stmt, i, SQL_C_CHAR,
 			                 buf, sizeof(char) * (col_size+1), &indicator);
@@ -1718,7 +1722,7 @@ odbcIterateForeignScan(ForeignScanState *node)
 				/* Handle null columns */
 				if (indicator == SQL_NULL_DATA)
 				{
-					// BuildTupleFromCStrings expects NULLs to be NULL pointers
+					/* BuildTupleFromCStrings expects NULLs to be NULL pointers */
 					values[mapped_pos] = NULL;
 				}
 				else
@@ -1913,8 +1917,8 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 	}
 	else if (is_blank_string(schema_name))
 	{
-		// This allows overriding and removing the schema, which is necessary
-		// for some schema-less ODBC data sources (e.g. Hive)
+		/* This allows overriding and removing the schema, which is necessary */
+		/* for some schema-less ODBC data sources (e.g. Hive) */
 		schema_name = NULL;
 	}
 
@@ -1980,7 +1984,6 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 		else if (stmt->list_type == FDW_IMPORT_SCHEMA_ALL || stmt->list_type == FDW_IMPORT_SCHEMA_EXCEPT)
 		{
 			/* Will obtain the foreign tables with SQLTables() */
-
 			SQLCHAR *table_schema = (SQLCHAR *) palloc(sizeof(SQLCHAR) * MAXIMUM_SCHEMA_NAME_LEN);
 
 			odbc_connection(&options, &env, &dbc);
@@ -2005,13 +2008,14 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 				{
 					int excluded = false;
 
-					/* Since we're not filtering the SQLTables call by schema
-					   we must exclude here tables that belong to other schemas.
-					   For some ODBC drivers tables may not be organized into
-					   schemas and the schema of the table will be blank.
-					   So we only reject tables for which the schema is not
-					   blank and different from the desired schema:
-					 */
+					/*
+					* Since we're not filtering the SQLTables call by schema
+					* we must exclude here tables that belong to other schemas.
+					* For some ODBC drivers tables may not be organized into
+					* schemas and the schema of the table will be blank.
+					* So we only reject tables for which the schema is not
+					* blank and different from the desired schema:
+					*/
 					ret = SQLGetData(tables_stmt, SQLTABLES_SCHEMA_COLUMN, SQL_C_CHAR, table_schema, MAXIMUM_SCHEMA_NAME_LEN, &indicator);
 					if (SQL_SUCCESS == ret)
 					{
@@ -2028,15 +2032,16 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 						schema_name = NULL;
 					}
 
-					/* Since we haven't specified SQL_ALL_CATALOGS in the
-					   call to SQLTables we shouldn't get tables from special
-					   catalogs and only from the regular catalog of the database
-					   (the catalog name is usually the name of the database or blank,
-					   but depends on the driver and may vary, and can be obtained with:
-					     SQLCHAR *table_catalog = (SQLCHAR *) palloc(sizeof(SQLCHAR) * MAXIMUM_CATALOG_NAME_LEN);
-					     SQLGetData(tables_stmt, 1, SQL_C_CHAR, table_catalog, MAXIMUM_CATALOG_NAME_LEN, &indicator);
-					 */
-
+					/*
+					* Since we haven't specified SQL_ALL_CATALOGS in the
+					* call to SQLTables we shouldn't get tables from special
+					* catalogs and only from the regular catalog of the database
+					* (the catalog name is usually the name of the database or blank,
+					* but depends on the driver and may vary, and can be obtained with:
+					*
+					*   SQLCHAR *table_catalog = (SQLCHAR *) palloc(sizeof(SQLCHAR) * MAXIMUM_CATALOG_NAME_LEN);
+					*   SQLGetData(tables_stmt, 1, SQL_C_CHAR, table_catalog, MAXIMUM_CATALOG_NAME_LEN, &indicator);
+					*/
 					TableName = (SQLCHAR *) palloc(sizeof(SQLCHAR) * MAXIMUM_TABLE_NAME_LEN);
 					ret = SQLGetData(tables_stmt, SQLTABLES_NAME_COLUMN, SQL_C_CHAR, TableName, MAXIMUM_TABLE_NAME_LEN, &indicator);
 					check_return(ret, "Reading table name", tables_stmt, SQL_HANDLE_STMT);
@@ -2104,15 +2109,15 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 				if (SQL_SUCCESS == ret)
 				{
 					ret = SQLGetData(columns_stmt, 4, SQL_C_CHAR, ColumnName, MAXIMUM_COLUMN_NAME_LEN, &indicator);
-					// check_return(ret, "Reading column name", columns_stmt, SQL_HANDLE_STMT);
+					/* check_return(ret, "Reading column name", columns_stmt, SQL_HANDLE_STMT); */
 					ret = SQLGetData(columns_stmt, 5, SQL_C_SSHORT, &DataType, MAXIMUM_COLUMN_NAME_LEN, &indicator);
-					// check_return(ret, "Reading column type", columns_stmt, SQL_HANDLE_STMT);
+					/* check_return(ret, "Reading column type", columns_stmt, SQL_HANDLE_STMT); */
 					ret = SQLGetData(columns_stmt, 7, SQL_C_SLONG, &ColumnSize, 0, &indicator);
-					// check_return(ret, "Reading column size", columns_stmt, SQL_HANDLE_STMT);
+					/* check_return(ret, "Reading column size", columns_stmt, SQL_HANDLE_STMT); */
 					ret = SQLGetData(columns_stmt, 9, SQL_C_SSHORT, &DecimalDigits, 0, &indicator);
-					// check_return(ret, "Reading column decimals", columns_stmt, SQL_HANDLE_STMT);
+					/* check_return(ret, "Reading column decimals", columns_stmt, SQL_HANDLE_STMT); */
 					ret = SQLGetData(columns_stmt, 11, SQL_C_SSHORT, &Nullable, 0, &indicator);
-					// check_return(ret, "Reading column nullable", columns_stmt, SQL_HANDLE_STMT);
+					/* check_return(ret, "Reading column nullable", columns_stmt, SQL_HANDLE_STMT); */
 					sql_data_type(DataType, ColumnSize, DecimalDigits, Nullable, &sql_type);
 					if (is_blank_string(sql_type.data))
 					{
@@ -2136,7 +2141,7 @@ odbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 	table_columns_cell = list_head(table_columns);
 	foreach(tables_cell, tables)
 	{
-		// temporarily define vars here...
+		/* temporarily define vars here... */
 		char *table_name = (char*)lfirst(tables_cell);
 		char *columns    = (char*)lfirst(table_columns_cell);
 		StringInfoData create_statement;

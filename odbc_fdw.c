@@ -860,7 +860,7 @@ odbcGetTableSize(odbcFdwOptions* options, unsigned int *size)
 		if (SQL_SUCCEEDED(ret))
 		{
 			*size = (unsigned int) table_size;
-			elog_debug(DEBUG1, "Count query result: %lu", table_size);
+			elog_debug("Count query result: %lu", table_size);
 		}
 	}
 	else

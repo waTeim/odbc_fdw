@@ -1,5 +1,5 @@
 {
-    "name": "postgis",
+    "name": "odbc_fdw",
     "current_version": {
         "requires": {
             "postgres": ">=10.1.1"

@@ -1,0 +1,14 @@
+{
+    "name": "postgis",
+    "current_version": {
+        "requires": {
+            "postgres": ">=10.1.1"
+        },
+        "works_with": {
+            "builder": ">=4.12.74"
+        }
+    },
+
+    "exceptional_versions": {
+    }
+}

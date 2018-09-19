@@ -7,7 +7,7 @@ set -x
 set -e
 
 # Add the PDGD repository
-sudo apt-key adv --keyserver keys.gnupg.net --recv-keys 7FCC7D46ACCC4CF8
+sudo apt-key adv --keyserver keys.gnupg.net --recv-keys ACCC4CF8
 add-apt-repository "deb http://apt.postgresql.org/pub/repos/apt/ trusty-pgdg main"
 apt-get update
 

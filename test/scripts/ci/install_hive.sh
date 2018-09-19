@@ -12,8 +12,8 @@ ssh-keygen -t dsa -P '' -f ~/.ssh/id_dsa
 cat ~/.ssh/id_dsa.pub >> ~/.ssh/authorized_keys
 chmod 0600 ~/.ssh/authorized_keys
 sudo apt-get -y install openjdk-7-jre
-wget --quiet --directory-prefix=/opt http://apache.rediris.es/hadoop/core/hadoop-${HADOOP_VERSION}/hadoop-${HADOOP_VERSION}.tar.gz
-wget --quiet --directory-prefix=/opt http://apache.rediris.es/hive/hive-${HIVE_VERSION}/apache-hive-${HIVE_VERSION}-bin.tar.gz
+wget --quiet --directory-prefix=/opt http://archive.apache.org/dist/hadoop/common/hadoop-${HADOOP_VERSION}/hadoop-${HADOOP_VERSION}.tar.gz
+wget --quiet --directory-prefix=/opt http://archive.apache.org/dist/hive/hive-${HIVE_VERSION}/apache-hive-${HIVE_VERSION}-bin.tar.gz
 tar -xzf /opt/hadoop-${HADOOP_VERSION}.tar.gz -C /opt
 tar -xzf /opt/apache-hive-${HIVE_VERSION}-bin.tar.gz -C /opt
 sed -i -- 's/export JAVA_HOME=${JAVA_HOME}/export JAVA_HOME=\/usr\/lib\/jvm\/java-7-openjdk-amd64/g' ${HADOOP_HOME}/etc/hadoop/hadoop-env.sh

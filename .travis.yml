@@ -9,6 +9,7 @@ env:
     - HIVE_HOME=/opt/apache-hive-2.1.1-bin
     - HADOOP_VERSION=2.7.5
     - HADOOP_HOME=/opt/hadoop-2.7.5
+    - TDSVER=7.0
 
 matrix:
   include:

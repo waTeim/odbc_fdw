@@ -37,10 +37,10 @@ before_install:
   - openssl aes-256-cbc -K $encrypted_d52b986e6313_key -iv $encrypted_d52b986e6313_iv -in $TRAVIS_BUILD_DIR/test/config/hive.config.enc -out $TRAVIS_BUILD_DIR/test/config/hive.config -d
   - openssl aes-256-cbc -K $encrypted_d52b986e6313_key -iv $encrypted_d52b986e6313_iv -in $TRAVIS_BUILD_DIR/test/config/postgres.config.enc -out $TRAVIS_BUILD_DIR/test/config/postgres.config -d
     # mysql.config and sqlserver.config have been compressed into one file to ease encryption/decryption. In future updates every config should be included in this file
-  - openssl aes-256-cbc -K $encrypted_09e387fba547_key -iv $encrypted_09e387fba547_iv -in $TRAVIS_BUILD_DIR/test/config/configs.tar.gz.enc -out $TRAVIS_BUILD_DIR/test/config/configs.tar.gz
+  - openssl aes-256-cbc -K $encrypted_09e387fba547_key -iv $encrypted_09e387fba547_iv -in $TRAVIS_BUILD_DIR/test/config/configs.tar.enc -out $TRAVIS_BUILD_DIR/test/config/configs.tar
 
   # Extract config files
-  - tar -xzvf $TRAVIS_BUILD_DIR/test/config/configs.tar.gz -C $TRAVIS_BUILD_DIR/test/config
+  - tar xvf $TRAVIS_BUILD_DIR/test/config/configs.tar -C $TRAVIS_BUILD_DIR/test/config
     # Install PostgreSQL (no sudos in script)
   - sudo bash $TRAVIS_BUILD_DIR/test/scripts/ci/install_postgres.sh
   # Install Hive (sudos in script as needed)

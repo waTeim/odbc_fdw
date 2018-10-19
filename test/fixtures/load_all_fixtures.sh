@@ -30,7 +30,7 @@ load_mysql_fixtures()
 load_sqlserver_fixtures()
 {
     load_config "sqlserver.config"
-    tsql -S $host -U $user -P $password < "$BASEDIR/sqlserver_fixtures.sql"
+    tsql -S $host -D $dbname -U $user -P "$password" < "$BASEDIR/sqlserver_fixtures.sql"
 }
 
 load_all()

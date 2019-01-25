@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1
+Released 2019-01-19
+
+Changes:
+- Changes in the testing infraestructure (https://github.com/CartoDB/odbc_fdw/pull/80, https://github.com/CartoDB/odbc_fdw/pull/81, https://github.com/CartoDB/odbc_fdw/pull/84, https://github.com/CartoDB/odbc_fdw/pull/87, https://github.com/CartoDB/odbc_fdw/pull/93).
+- Fixes to support the final release of PostgreSQL 11 (https://github.com/CartoDB/odbc_fdw/pull/82).
+- Use TupleDescAttr instead of its internal representation (https://github.com/CartoDB/odbc_fdw/pull/89).
+
 ## 0.3.0
 Released 2018-02-20
 

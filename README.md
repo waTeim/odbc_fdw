@@ -4,9 +4,17 @@ ODBC FDW for PostgreSQL 9.5+ [![Build Status](https://travis-ci.org/CartoDB/odbc
 This PostgreSQL extension implements a Foreign Data Wrapper (FDW) for
 remote databases using Open Database Connectivity [ODBC](http://msdn.microsoft.com/en-us/library/ms714562(v=VS.85).aspx).
 
-This was originally developed by Zheng Yang <zhengyang4k@gmail.com> in 2011,
-with contributions by Gunnar "Nick" Bluth <nick@pro-open.de> from 2014
-and further developed by CARTO <dataservices@carto.com> since 2016.
+This was originally developed by Zheng Yang in 2011,
+with contributions by Gunnar "Nick" Bluth from 2014
+and further developed by CARTO since 2016.
+
+While we don’t provide direct technical support to Open Source
+installations, it is possible to engage in technical conversations
+with the community and part of the CARTO team (including some team
+members like Solutions, Support, Backend, and Frontend engineers) in
+our [Google Groups
+forum](https://groups.google.com/forum/#!forum/cartodb) and [GIS Stack
+Exchange](https://gis.stackexchange.com/questions/tagged/carto).
 
 Requirements
 ------------

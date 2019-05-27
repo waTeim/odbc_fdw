@@ -14,7 +14,7 @@ with the community and part of the CARTO team (including some team
 members like Solutions, Support, Backend, and Frontend engineers) in
 our [Google Groups
 forum](https://groups.google.com/forum/#!forum/cartodb) and [GIS Stack
-Exchange](https://gis.stackexchange.com/questions/tagged/cartodb).
+Exchange](https://gis.stackexchange.com/questions/tagged/carto).
 
 Requirements
 ------------

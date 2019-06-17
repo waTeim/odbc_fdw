@@ -6,6 +6,7 @@ test/results/
 *.dylib
 **/*.o
 **/*.so
+.vscode
 test/regression.diffs
 test/regression.out
 test/sql/*_installation*

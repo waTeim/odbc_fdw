@@ -725,13 +725,11 @@ getNameQualifierChar(SQLHDBC dbc, StringInfoData *nq_char)
 {
 	SQLCHAR name_qualifier_char[2];
 
+    name_qualifier_char[0] = 0;
 	elog_debug("%s", __func__);
 
-	SQLGetInfo(dbc,
-	           SQL_CATALOG_NAME_SEPARATOR,
-	           (SQLPOINTER)&name_qualifier_char,
-	           2,
-	           NULL);
+	SQLGetInfo(dbc, SQL_CATALOG_NAME_SEPARATOR, (SQLPOINTER)&name_qualifier_char, 2, NULL);
+	if(name_qualifier_char[0] == 0) name_qualifier_char[0] = '.';
 	name_qualifier_char[1] = 0; // some drivers fail to copy the trailing zero
 
 	initStringInfo(nq_char);
@@ -846,7 +844,7 @@ odbcGetTableSize(odbcFdwOptions* options, unsigned int *size)
 				/* Remove trailing semicolon if present */
 				options->sql_query[strlen(options->sql_query)-1] = 0;
 			}
-			appendStringInfo(&sql_str, "SELECT COUNT(*) FROM (%s) AS _odbc_fwd_count_wrapped", options->sql_query);
+			appendStringInfo(&sql_str, "SELECT COUNT(*) FROM (%s) AS ODBC_fwd_count_wrapped", options->sql_query);
 		}
 	}
 	else
@@ -1397,8 +1395,19 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 	if (node->ss.ps.plan->qual)
 	{
 #if PG_VERSION_NUM >= 100000
-		ExprState  *state = node->ss.ps.qual;
-		odbcGetQual((Node *) state->expr, node->ss.ss_currentRelation->rd_att, options.mapping_list, &qual_key, &qual_value, &pushdown);
+		ExprState *state = node->ss.ps.qual;
+
+        if(state->expr)
+        {
+		   ListCell *lc;
+           List *exprList = (List*)state->expr;
+
+           foreach(lc,exprList)
+           {
+		      odbcGetQual((Node *)lfirst(lc), node->ss.ss_currentRelation->rd_att, options.mapping_list, &qual_key, &qual_value, &pushdown);
+		      if(pushdown) break;
+           }
+        }
 #else
 		ListCell    *lc;
 		foreach (lc, node->ss.ps.qual)

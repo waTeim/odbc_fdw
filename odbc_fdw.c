@@ -1102,72 +1102,72 @@ Datum odbc_tables_list(PG_FUNCTION_ARGS)
 static void
 odbcGetQual(Node *node, TupleDesc tupdesc, List *col_mapping_list, char **key, char **value, bool *pushdown)
 {
-	ListCell *col_mapping;
-	*key = NULL;
-	*value = NULL;
-	*pushdown = false;
+    ListCell *col_mapping;
+    *key = NULL;
+    *value = NULL;
+    *pushdown = false;
 
-	elog_debug("%s", __func__);
+    elog_debug("%s", __func__);
 
-	if (!node) return;
-	if (IsA(node, OpExpr))
-	{
-		OpExpr  *op = (OpExpr *) node;
-		Node    *left, *right;
-		Index   varattno;
+    if (!node) return;
+    if (IsA(node, OpExpr))
+    {
+        OpExpr  *op = (OpExpr *) node;
+        Node    *left, *right;
+        Index   varattno;
 
-		if (list_length(op->args) != 2)
-			return;
+        if (list_length(op->args) != 2)
+            return;
 
-		left = list_nth(op->args, 0);
-		if (!IsA(left, Var)) return;
+        left = list_nth(op->args, 0);
+        if (!IsA(left, Var)) return;
 
-		varattno = ((Var *) left)->varattno;
+        varattno = ((Var *) left)->varattno;
 
-		right = list_nth(op->args, 1);
+        right = list_nth(op->args, 1);
 
-		if (IsA(right, Const))
-		{
-			StringInfoData  buf;
-			Oid opFuncId = op->opfuncid;
+        if (IsA(right, Const))
+        {
+            StringInfoData  buf;
+            Oid opFuncId = op->opfuncid;
 
-			initStringInfo(&buf);
-			/* And get the column and value... */
-			*key = NameStr(TupleDescAttr(tupdesc, varattno - 1)->attname);
+            initStringInfo(&buf);
+            /* And get the column and value... */
+            *key = NameStr(TupleDescAttr(tupdesc, varattno - 1)->attname);
 
-			if (((Const *) right)->consttype == PROCID_TEXTCONST)
-				*value = TextDatumGetCString(((Const *) right)->constvalue);
-			else
-			{
-				Oid typeFnOid;
-				bool isVarLenA;
-				FmgrInfo finfo;
+            if (((Const *) right)->consttype == PROCID_TEXTCONST)
+                *value = TextDatumGetCString(((Const *) right)->constvalue);
+            else
+            {
+                Oid typeFnOid;
+                bool isVarLenA;
+                FmgrInfo finfo;
 
                 getTypeOutputInfo(((Const*)right)->consttype,&typeFnOid,&isVarLenA);
                 fmgr_info(typeFnOid,&finfo);
-				*value = OutputFunctionCall(&finfo,((Const*)right)->constvalue);
-			}
+                *value = OutputFunctionCall(&finfo,((Const*)right)->constvalue);
+            }
 
-			/* convert qual keys to mapped couchdb attribute name */
-			foreach(col_mapping, col_mapping_list)
-			{
-				DefElem *def = (DefElem *) lfirst(col_mapping);
-				if (strcmp(def->defname, *key) == 0)
-				{
-					*key = defGetString(def);
-					break;
-				}
-			}
+            /* convert qual keys to mapped couchdb attribute name */
+            foreach(col_mapping, col_mapping_list)
+            {
+                DefElem *def = (DefElem *) lfirst(col_mapping);
+                if (strcmp(def->defname, *key) == 0)
+                {
+                    *key = defGetString(def);
+                    break;
+                }
+            }
 
-			/*
-			 * We can push down this qual if:
-			 * - The operatory is TEXTEQ
-			 * - The qual is on the _id column (in addition, _rev column can be also valid)
-			 */
+            /*
+             * We can push down this qual if:
+             * - The operatory is TEXTEQ
+             * - The qual is on the _id column (in addition, _rev column can be also valid)
+             */
 
-			if (opFuncId == PROCID_TEXTEQ || opFuncId == PROCID_INT4EQ) *pushdown = true;
-		}
-	}
+            if (opFuncId == PROCID_TEXTEQ || opFuncId == PROCID_INT4EQ) *pushdown = true;
+        }
+    }
 }
 
 /*
@@ -1398,17 +1398,17 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 #if PG_VERSION_NUM >= 100000
 		ExprState *state = node->ss.ps.qual;
 
-        if(state->expr)
-        {
-            ListCell *lc;
-            List *exprList = (List*)state->expr;
+		if(state->expr)
+		{
+			ListCell *lc;
+			List *exprList = (List*)state->expr;
 
-            foreach(lc,exprList)
-            {
-                odbcGetQual((Node *)lfirst(lc), node->ss.ss_currentRelation->rd_att, options.mapping_list, &qual_key, &qual_value, &pushdown);
-                if(pushdown) break;
-            }
-        }
+			foreach(lc,exprList)
+			{
+				odbcGetQual((Node *)lfirst(lc), node->ss.ss_currentRelation->rd_att, options.mapping_list, &qual_key, &qual_value, &pushdown);
+				if(pushdown) break;
+			}
+		}
 #else
 		ListCell    *lc;
 		foreach (lc, node->ss.ps.qual)

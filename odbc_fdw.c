@@ -1400,14 +1400,14 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 
         if(state->expr)
         {
-		   ListCell *lc;
-           List *exprList = (List*)state->expr;
+            ListCell *lc;
+            List *exprList = (List*)state->expr;
 
-           foreach(lc,exprList)
-           {
-		      odbcGetQual((Node *)lfirst(lc), node->ss.ss_currentRelation->rd_att, options.mapping_list, &qual_key, &qual_value, &pushdown);
-		      if(pushdown) break;
-           }
+            foreach(lc,exprList)
+            {
+                odbcGetQual((Node *)lfirst(lc), node->ss.ss_currentRelation->rd_att, options.mapping_list, &qual_key, &qual_value, &pushdown);
+                if(pushdown) break;
+            }
         }
 #else
 		ListCell    *lc;
@@ -1416,8 +1416,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 			/* Only the first qual can be pushed down to remote DBMS */
 			ExprState  *state = lfirst(lc);
 			odbcGetQual((Node *) state->expr, node->ss.ss_currentRelation->rd_att, options.mapping_list, &qual_key, &qual_value, &pushdown);
-			if (pushdown)
-				break;
+			if (pushdown) break;
 		}
 #endif
 	}

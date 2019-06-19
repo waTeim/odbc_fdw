@@ -73,8 +73,9 @@ PG_MODULE_MAGIC;
 #define elog_debug(...) ((void) 0)
 #endif
 
-#define PROCID_TEXTEQ 67
 #define PROCID_TEXTCONST 25
+#define PROCID_INT4EQ 65
+#define PROCID_TEXTEQ 67
 
 /* Provisional limit to name lengths in characters */
 #define MAXIMUM_CATALOG_NAME_LEN 255
@@ -1108,9 +1109,7 @@ odbcGetQual(Node *node, TupleDesc tupdesc, List *col_mapping_list, char **key, c
 
 	elog_debug("%s", __func__);
 
-	if (!node)
-		return;
-
+	if (!node) return;
 	if (IsA(node, OpExpr))
 	{
 		OpExpr  *op = (OpExpr *) node;
@@ -1121,9 +1120,7 @@ odbcGetQual(Node *node, TupleDesc tupdesc, List *col_mapping_list, char **key, c
 			return;
 
 		left = list_nth(op->args, 0);
-		if (!IsA(left, Var))
-
-			return;
+		if (!IsA(left, Var)) return;
 
 		varattno = ((Var *) left)->varattno;
 
@@ -1132,6 +1129,8 @@ odbcGetQual(Node *node, TupleDesc tupdesc, List *col_mapping_list, char **key, c
 		if (IsA(right, Const))
 		{
 			StringInfoData  buf;
+			Oid opFuncId = op->opfuncid;
+
 			initStringInfo(&buf);
 			/* And get the column and value... */
 			*key = NameStr(TupleDescAttr(tupdesc, varattno - 1)->attname);
@@ -1140,7 +1139,13 @@ odbcGetQual(Node *node, TupleDesc tupdesc, List *col_mapping_list, char **key, c
 				*value = TextDatumGetCString(((Const *) right)->constvalue);
 			else
 			{
-				return;
+				Oid typeFnOid;
+				bool isVarLenA;
+				FmgrInfo finfo;
+
+                getTypeOutputInfo(((Const*)right)->consttype,&typeFnOid,&isVarLenA);
+                fmgr_info(typeFnOid,&finfo);
+				*value = OutputFunctionCall(&finfo,((Const*)right)->constvalue);
 			}
 
 			/* convert qual keys to mapped couchdb attribute name */
@@ -1160,13 +1165,9 @@ odbcGetQual(Node *node, TupleDesc tupdesc, List *col_mapping_list, char **key, c
 			 * - The qual is on the _id column (in addition, _rev column can be also valid)
 			 */
 
-			if (op->opfuncid == PROCID_TEXTEQ)
-				*pushdown = true;
-
-			return;
+			if (opFuncId == PROCID_TEXTEQ || opFuncId == PROCID_INT4EQ) *pushdown = true;
 		}
 	}
-	return;
 }
 
 /*

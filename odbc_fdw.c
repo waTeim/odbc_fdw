@@ -34,6 +34,7 @@
 #include "foreign/foreign.h"
 #include "utils/memutils.h"
 #include "utils/builtins.h"
+#include "utils/lsyscache.h"
 #include "utils/relcache.h"
 #include "storage/lock.h"
 #include "miscadmin.h"
@@ -942,6 +943,9 @@ odbc_table_size(PG_FUNCTION_ARGS)
 	unsigned int tableSize;
 	List *tableOptions = NIL;
 	Node *val = (Node *) makeString(tableName);
+	Oid serverOid;
+	odbcFdwOptions options;
+
 #if PG_VERSION_NUM >= 100000
 	DefElem *elem = (DefElem *) makeDefElem(defname, val, -1);
 #else
@@ -949,8 +953,8 @@ odbc_table_size(PG_FUNCTION_ARGS)
 #endif
 
 	tableOptions = lappend(tableOptions, elem);
-	Oid serverOid = oid_from_server_name(serverName);
-	odbcFdwOptions options;
+	serverOid = oid_from_server_name(serverName);
+	
 	odbcGetOptions(serverOid, tableOptions, &options);
 	odbcGetTableSize(&options, &tableSize);
 
@@ -966,6 +970,9 @@ odbc_query_size(PG_FUNCTION_ARGS)
 	unsigned int querySize;
 	List *queryOptions = NIL;
 	Node *val = (Node *) makeString(sqlQuery);
+	Oid serverOid;
+	odbcFdwOptions options;
+
 #if PG_VERSION_NUM >= 100000
 	DefElem *elem = (DefElem *) makeDefElem(defname, val, -1);
 #else
@@ -973,8 +980,7 @@ odbc_query_size(PG_FUNCTION_ARGS)
 #endif
 
 	queryOptions = lappend(queryOptions, elem);
-	Oid serverOid = oid_from_server_name(serverName);
-	odbcFdwOptions options;
+	serverOid = oid_from_server_name(serverName);
 	odbcGetOptions(serverOid, queryOptions, &options);
 	odbcGetTableSize(&options, &querySize);
 
@@ -1021,18 +1027,22 @@ Datum odbc_tables_list(PG_FUNCTION_ARGS)
 	AttInMetadata *attinmeta;
 
 	if (SRF_IS_FIRSTCALL()) {
+		MemoryContext oldcontext;
+		char *serverName; 
+		int serverOid;
+		odbcFdwOptions options;
+
 		funcctx = SRF_FIRSTCALL_INIT();
-		MemoryContext oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
+		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
 		datafctx = (TableDataCtx *) palloc(sizeof(TableDataCtx));
 		tableResult = (DataBinding*) palloc( numColumns * sizeof(DataBinding) );
 
-		char *serverName = text_to_cstring(PG_GETARG_TEXT_PP(0));
-		int serverOid = oid_from_server_name(serverName);
+		serverName = text_to_cstring(PG_GETARG_TEXT_PP(0));
+		serverOid = oid_from_server_name(serverName);
 
 		rowLimit = PG_GETARG_INT32(1);
 		currentRow = 0;
 
-		odbcFdwOptions options;
 		odbcGetOptions(serverOid, NULL, &options);
 		odbc_connection(&options, &env, &dbc);
 		SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);

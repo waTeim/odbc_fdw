@@ -1176,6 +1176,7 @@ odbcGetQual(Node *node, TupleDesc tupdesc, List *col_mapping_list, char **key, c
              */
 
             if (opFuncId == PROCID_TEXTEQ || opFuncId == PROCID_INT4EQ) *pushdown = true;
+			else elog(DEBUG1,"Unsuppored qualifying operation (id = %d)",opFuncId);
         }
     }
 }

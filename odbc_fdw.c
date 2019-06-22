@@ -75,7 +75,15 @@ PG_MODULE_MAGIC;
 #endif
 
 #define PROCID_TEXTCONST 25
+
+/**
+ *  supported operations for pushdown, see postgres src/include/catalog/pg_proc.dat for a list
+ */
 #define PROCID_INT4EQ 65
+#define PROCID_INT4LT 66
+#define PROCID_INT4GT 147
+#define PROCID_INT4LE 149
+#define PROCID_INT4GE 150
 #define PROCID_TEXTEQ 67
 
 /* Provisional limit to name lengths in characters */
@@ -1106,16 +1114,50 @@ Datum odbc_tables_list(PG_FUNCTION_ARGS)
 	}
 }
 
+static bool getPushDown(Oid opFuncId,char **optext)
+{
+    static char *operators[] = { "=", "<", ">", "<=", ">=" };
+    bool pushdown = false;
+
+    if (opFuncId == PROCID_TEXTEQ || opFuncId == PROCID_INT4EQ) 
+    {
+        pushdown = true;
+        *optext = operators[0];
+    }
+    else if(opFuncId == PROCID_INT4LT)
+    {
+        pushdown = true;
+        *optext = operators[1];
+    }
+    else if(opFuncId == PROCID_INT4GT)
+    {
+        pushdown = true;
+        *optext = operators[2];
+	}
+    else if(opFuncId == PROCID_INT4LE)
+    {
+        pushdown = true;
+        *optext = operators[3];
+	}
+    else if(opFuncId == PROCID_INT4GE)
+    {
+        pushdown = true;
+        *optext = operators[4];
+	}
+    return pushdown;
+}
+
 /*
  * get quals in the select if there is one
  */
 static void
-odbcGetQual(Node *node, TupleDesc tupdesc, List *col_mapping_list, char **key, char **value, bool *pushdown)
+odbcGetQual(Node *node, TupleDesc tupdesc, List *col_mapping_list, char **key, char **value, char **optext, bool *pushdown)
 {
     ListCell *col_mapping;
     *key = NULL;
     *value = NULL;
     *pushdown = false;
+	*optext = NULL;
 
     elog_debug("%s", __func__);
 
@@ -1176,8 +1218,8 @@ odbcGetQual(Node *node, TupleDesc tupdesc, List *col_mapping_list, char **key, c
              * - The qual is on the _id column (in addition, _rev column can be also valid)
              */
 
-            if (opFuncId == PROCID_TEXTEQ || opFuncId == PROCID_INT4EQ) *pushdown = true;
-			else elog(DEBUG1,"Unsuppored qualifying operation (id = %d)",opFuncId);
+            *pushdown = getPushDown(opFuncId,optext);
+			if(!*pushdown) elog(DEBUG1,"Unsuppored qualifying operation (id = %d)",opFuncId);
         }
     }
 }
@@ -1334,6 +1376,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 
 	char *qual_key         = NULL;
 	char *qual_value       = NULL;
+	char *qual_op          = NULL;
 	bool pushdown          = false;
 
 	const char* schema_name;
@@ -1417,7 +1460,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 
 			foreach(lc,exprList)
 			{
-				odbcGetQual((Node *)lfirst(lc), node->ss.ss_currentRelation->rd_att, options.mapping_list, &qual_key, &qual_value, &pushdown);
+				odbcGetQual((Node *)lfirst(lc), node->ss.ss_currentRelation->rd_att, options.mapping_list, &qual_key, &qual_value, &qual_op, &pushdown);
 				if(pushdown) break;
 			}
 		}
@@ -1427,7 +1470,7 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 		{
 			/* Only the first qual can be pushed down to remote DBMS */
 			ExprState  *state = lfirst(lc);
-			odbcGetQual((Node *) state->expr, node->ss.ss_currentRelation->rd_att, options.mapping_list, &qual_key, &qual_value, &pushdown);
+			odbcGetQual((Node *) state->expr, node->ss.ss_currentRelation->rd_att, options.mapping_list, &qual_key, &qual_value, &qual_op, &pushdown);
 			if (pushdown) break;
 		}
 #endif
@@ -1457,8 +1500,8 @@ odbcBeginForeignScan(ForeignScanState *node, int eflags)
 		}
 		if (pushdown)
 		{
-			appendStringInfo(&sql, " WHERE %s%s%s = '%s'",
-			                 (char *) quote_char.data, qual_key, (char *) quote_char.data, qual_value);
+			appendStringInfo(&sql, " WHERE %s%s%s %s '%s'",
+			                 (char *) quote_char.data, qual_key, (char *) quote_char.data, qual_op, qual_value);
 		}
 	}
 

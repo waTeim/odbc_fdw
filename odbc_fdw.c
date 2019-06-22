@@ -1120,6 +1120,7 @@ odbcGetQual(Node *node, TupleDesc tupdesc, List *col_mapping_list, char **key, c
     elog_debug("%s", __func__);
 
     if (!node) return;
+	elog(DEBUG1,"checking qualifier");
     if (IsA(node, OpExpr))
     {
         OpExpr  *op = (OpExpr *) node;

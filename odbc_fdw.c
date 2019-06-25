@@ -79,12 +79,22 @@ PG_MODULE_MAGIC;
 /**
  *  supported operations for pushdown, see postgres src/include/catalog/pg_proc.dat for a list
  */
+#define PROCID_INT2EQ 63
+#define PROCID_INT2LT 64
 #define PROCID_INT4EQ 65
 #define PROCID_INT4LT 66
+#define PROCID_TEXTEQ 67
+#define PROCID_INT2GT 146
 #define PROCID_INT4GT 147
+#define PROCID_INT2LE 148
 #define PROCID_INT4LE 149
 #define PROCID_INT4GE 150
-#define PROCID_TEXTEQ 67
+#define PROCID_INT2GE 151
+#define PROCID_DATEEQ 1086
+#define PROCID_DATELT 1087
+#define PROCID_DATELE 1088
+#define PROCID_DATEGT 1089
+#define PROCID_DATEGE 1090
 
 /* Provisional limit to name lengths in characters */
 #define MAXIMUM_CATALOG_NAME_LEN 255
@@ -1119,30 +1129,39 @@ static bool getPushDown(Oid opFuncId,char **optext)
     static char *operators[] = { "=", "<", ">", "<=", ">=" };
     bool pushdown = false;
 
-    if (opFuncId == PROCID_TEXTEQ || opFuncId == PROCID_INT4EQ) 
-    {
-        pushdown = true;
-        *optext = operators[0];
-    }
-    else if(opFuncId == PROCID_INT4LT)
-    {
-        pushdown = true;
-        *optext = operators[1];
-    }
-    else if(opFuncId == PROCID_INT4GT)
-    {
-        pushdown = true;
-        *optext = operators[2];
-	}
-    else if(opFuncId == PROCID_INT4LE)
-    {
-        pushdown = true;
-        *optext = operators[3];
-	}
-    else if(opFuncId == PROCID_INT4GE)
-    {
-        pushdown = true;
-        *optext = operators[4];
+    switch(opFuncId)
+	{
+	    case PROCID_DATEEQ: 
+	    case PROCID_INT2EQ: 
+	    case PROCID_INT4EQ: 
+        case PROCID_TEXTEQ:
+            pushdown = true;
+            *optext = operators[0];
+	    break;
+        case PROCID_DATELT:
+        case PROCID_INT2LT:
+        case PROCID_INT4LT:
+            pushdown = true;
+            *optext = operators[1];
+	    break;
+        case PROCID_DATEGT:
+        case PROCID_INT2GT:
+        case PROCID_INT4GT:
+            pushdown = true;
+            *optext = operators[2];
+		break;
+        case PROCID_DATELE:
+        case PROCID_INT2LE:
+        case PROCID_INT4LE:
+            pushdown = true;
+            *optext = operators[3];
+		break;
+        case PROCID_DATEGE:
+        case PROCID_INT2GE:
+        case PROCID_INT4GE:
+            pushdown = true;
+            *optext = operators[4];
+	    break;
 	}
     return pushdown;
 }

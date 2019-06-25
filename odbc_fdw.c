@@ -95,6 +95,11 @@ PG_MODULE_MAGIC;
 #define PROCID_DATELE 1088
 #define PROCID_DATEGT 1089
 #define PROCID_DATEGE 1090
+#define PROCID_NUMERIC_EQ 1718
+#define PROCID_NUMERIC_GT 1720
+#define PROCID_NUMERIC_GE 1721
+#define PROCID_NUMERIC_LT 1722
+#define PROCID_NUMERIC_LE 1723
 
 /* Provisional limit to name lengths in characters */
 #define MAXIMUM_CATALOG_NAME_LEN 255
@@ -1131,6 +1136,7 @@ static bool getPushDown(Oid opFuncId,char **optext)
 
     switch(opFuncId)
 	{
+		case PROCID_NUMERIC_EQ:
 	    case PROCID_DATEEQ: 
 	    case PROCID_INT2EQ: 
 	    case PROCID_INT4EQ: 
@@ -1138,24 +1144,28 @@ static bool getPushDown(Oid opFuncId,char **optext)
             pushdown = true;
             *optext = operators[0];
 	    break;
+		case PROCID_NUMERIC_LT:
         case PROCID_DATELT:
         case PROCID_INT2LT:
         case PROCID_INT4LT:
             pushdown = true;
             *optext = operators[1];
 	    break;
+		case PROCID_NUMERIC_GT:
         case PROCID_DATEGT:
         case PROCID_INT2GT:
         case PROCID_INT4GT:
             pushdown = true;
             *optext = operators[2];
 		break;
+		case PROCID_NUMERIC_LE:
         case PROCID_DATELE:
         case PROCID_INT2LE:
         case PROCID_INT4LE:
             pushdown = true;
             *optext = operators[3];
 		break;
+		case PROCID_NUMERIC_GE:
         case PROCID_DATEGE:
         case PROCID_INT2GE:
         case PROCID_INT4GE:
